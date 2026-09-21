@@ -158,7 +158,7 @@ export function applyDecisions(
     const call = byId.get(decision.id);
     if (call && decision.action !== 'keep') actions.set(call.tool_use_id, decision.action);
   }
-  const kept: Message[] = [];
+  const kept: (Message | null)[] = [];
   for (const message of messages) {
     const touched =
       message.toolUses.some((tool) => actions.has(tool.tool_use_id)) ||
@@ -228,7 +228,7 @@ export function applyDecisions(
     if (toolResults.length > 0) rebuilt.toolResults = toolResults;
     kept.push(rebuilt);
   }
-  return kept;
+  return kept.filter((message): message is Message => message !== null);
 }
 
 /** Characters of text, tool input and tool output a message holds. */

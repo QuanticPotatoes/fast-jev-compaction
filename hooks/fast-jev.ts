@@ -256,6 +256,11 @@ function notify(
   $.ui.toast(text, { timeoutMs: 15_000 });
 }
 
+/** The host's refusal of `$.session.compact` in a headless (-p / SDK) session. */
+export function isHeadlessRefusal(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('not available in a headless');
+}
+
 export const register: Register = (on: On, options: PluginOptions) => {
   const configured = resolveHookConfig(options);
   let compacting = false;
@@ -297,6 +302,15 @@ export const register: Register = (on: On, options: PluginOptions) => {
       compacting = true;
       await $.session.compact();
     } catch (error) {
+      if (isHeadlessRefusal(error)) {
+        // SDK sessions (the desktop app's Code tab, `claude -p`) have no
+        // $.session.compact yet. /compact, queued for when this turn is over,
+        // raises the same session.compact event, so the hook above still runs.
+        void $.command.run({ command: 'compact' }).catch((queued: unknown) =>
+          $.ui.log(`auto-compact skipped (${queued instanceof Error ? queued.message : String(queued)})`),
+        );
+        return next(event);
+      }
       $.ui.log(
         `auto-compact skipped (${error instanceof Error ? error.message : String(error)})`,
       );

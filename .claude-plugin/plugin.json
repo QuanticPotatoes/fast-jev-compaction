@@ -52,6 +52,12 @@
       "description": "When Jev rates a call as no longer needed, remove the call and its result. Off: keep the call and truncate only its result, so the history still shows a tool call before every report.",
       "default": true
     },
+    "compactionTimeoutMs": {
+      "type": "number",
+      "title": "Jev compaction timeout",
+      "description": "Maximum milliseconds to wait for a Jev round, including all request batches. A timed-out plugin request leaves history unchanged; manual and automatic compactions fall back to the built-in summary.",
+      "default": 15000
+    },
     "maxStateTokens": {
       "type": "number",
       "title": "Maximum Jev state tokens",

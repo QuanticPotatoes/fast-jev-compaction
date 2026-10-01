@@ -115,6 +115,7 @@ Jev model is also served through OpenRouter, at
 | `maxStateTokens` | `25000` | Estimated token ceiling for the state |
 | `maxRequestTokens` | `30000` | Estimated ceiling for state plus one batch of questions |
 | `truncateHeadChars` | `300` | Characters of a dropped tool result retained before its note |
+| `dropCalls` | `false` | `true` removes a no-longer-needed call with its result; `false` leaves a stub of the call |
 
 `result.stats` reports message and character counts before and after, the
 per-reason decision counts, the state size in estimated tokens, which fitting

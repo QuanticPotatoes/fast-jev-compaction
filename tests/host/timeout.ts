@@ -61,7 +61,9 @@ test('deadline skips plugin compaction; late responses cannot install it', async
   expect(state.fetches).toBe(2);
   expect(state.summaries).toBe(0);
   expect(retried.skip).toBeUndefined();
-  expect(retried.messages?.length).toBeLessThan(messages.length);
+  // dropCalls defaults to false: calls become stubs, so the history shrinks in size, not in count.
+  const size = (list: readonly SessionMessage[]) => JSON.stringify(list).length;
+  expect(size(retried.messages ?? messages)).toBeLessThan(size(messages));
   expect(retried.messages?.[0]?.text).toBe('Continue the task.');
   await clock.advance(60_000);
   expect(state.summaries).toBe(0);

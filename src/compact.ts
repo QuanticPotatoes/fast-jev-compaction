@@ -21,7 +21,7 @@ export const DEFAULT_OPTIONS: ResolvedCompactOptions = {
   maxStateTokens: 25_000,
   maxRequestTokens: 30_000,
   truncateHeadChars: 300,
-  dropCalls: true,
+  dropCalls: false,
 };
 
 /** Tokens the request envelope (`model`, key names) adds around state and questions. */

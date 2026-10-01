@@ -57,6 +57,7 @@ The plugin declares these `userConfig` values in
 | `maxStateTokens` | `25000` |
 | `maxRequestTokens` | `30000` |
 | `truncateHeadChars` | `300` |
+| `dropCalls` | `false` |
 | `model` | `jev-latest` |
 | `baseUrl` | the TypeSafe endpoint |
 | `envFile` | unset |

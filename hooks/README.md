@@ -53,6 +53,7 @@ The plugin declares these `userConfig` values in
 | `compactAtPercent` | `60` |
 | `minReductionRatio` | `0.25` |
 | `compactionTimeoutMs` | `15000` |
+| `builtinFallback` | `auto` |
 | `maxStateTokens` | `25000` |
 | `maxRequestTokens` | `30000` |
 | `truncateHeadChars` | `300` |
@@ -74,22 +75,32 @@ nothing earlier held a key, and a file that cannot be read is not an error:
 the key is simply not there, and the hook falls back as it would.
 
 Every option except `apiKey`, `baseUrl`, `envFile`, `compactAtPercent`,
-`minReductionRatio`, `compactionTimeoutMs` and `model` is passed straight to the library; see the root
-README for what they do. The `session.compact` hook runs the Jev requests concurrently. If Jev fails,
-the response is malformed, the key is unavailable, the history cannot be
-fitted into the state budget, or the estimated reduction is below
-`minReductionRatio`, the hook logs a fallback and delegates to Claude Code's
-built-in compaction. The outcome is shown as a toast and logged with the
+`minReductionRatio`, `compactionTimeoutMs`, `builtinFallback` and `model` is passed
+straight to the library; see the root README for what they do. The `session.compact` hook runs the Jev requests
+concurrently. If Jev fails, the response is malformed, the key is unavailable,
+the history cannot be fitted into the state budget, or the estimated reduction
+is below `minReductionRatio`, what happens next depends on the compaction's
+`trigger`. With `builtinFallback` at `auto`, only Claude Code's own compaction
+(`auto`: its threshold, or a prompt too long, when the conversation has to
+shrink) logs a fallback and delegates to Claude Code's built-in compaction;
+`/compact` (`manual`), a plugin's request (`plugin`, including this plugin's
+`turn.complete` one) and `precompute` answer `{ skip }` instead, so the
+conversation stays as it is and Claude Code shows why. `always` delegates on
+every trigger, as the plugin did before the option existed; `never` on none.
+The outcome is shown as a toast and logged with the
 reduction, per-reason counts, state size and request count; a per-call
 `decisions:` line with both probabilities is logged for diagnosis. The
 `turn.complete` hook requests
 compaction when `context.percent` reaches `compactAtPercent`, with an
-in-flight guard.
+in-flight guard. When that request is skipped, the hook waits until the
+context has grown by another 10 percentage points, or dropped below
+`compactAtPercent` again, before it asks again.
 
 The hook waits at most `compactionTimeoutMs` for the Jev round, across all
 request batches. On a timeout, a plugin-triggered compaction returns a skip
-notice and leaves the conversation unchanged; manual and engine-triggered
-automatic compactions still fall back to the built-in summary. This bounds
+notice and leaves the conversation unchanged; any other compaction is treated
+like a Jev failure and follows `builtinFallback` (by default only Claude Code's
+own automatic compaction falls back to the built-in summary). This bounds
 the Jev wait, not the duration of a built-in summary. The host HTTP interface
 does not expose per-request cancellation, so in-flight requests may still
 finish; their late results cannot replace the conversation. Zero, negative

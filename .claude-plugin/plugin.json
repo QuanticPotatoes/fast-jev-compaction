@@ -55,8 +55,14 @@
     "compactionTimeoutMs": {
       "type": "number",
       "title": "Jev compaction timeout",
-      "description": "Maximum milliseconds to wait for a Jev round, including all request batches. A timed-out plugin request leaves history unchanged; manual and automatic compactions fall back to the built-in summary.",
+      "description": "Maximum milliseconds to wait for a Jev round, including all request batches. A timed-out plugin request leaves history unchanged; other compactions follow builtinFallback.",
       "default": 15000
+    },
+    "builtinFallback": {
+      "type": "string",
+      "title": "Built-in summary fallback",
+      "description": "Which compactions fall back to Claude Code's built-in summary when Jev fails or frees less than the minimum: auto (only Claude Code's own automatic compaction; others leave the conversation as it is), always, or never.",
+      "default": "auto"
     },
     "maxStateTokens": {
       "type": "number",

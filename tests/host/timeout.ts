@@ -68,17 +68,29 @@ test('deadline skips plugin compaction; late responses cannot install it', async
   expect(result.messages).toBeUndefined();
 });
 
-for (const trigger of ['manual', 'auto'] as const) {
-  test(`deadline retains ${trigger} compaction fallback`, async ($, on) => {
-    const { state, clock } = host(on);
-    const pending = $.session.compact({ trigger, messages: transcript() });
-    await clock.settle();
-    await clock.advance(15_000);
-    const result = await pending;
-    expect(state.fetches).toBe(1);
-    expect(state.summaries).toBe(1);
-    expect(result.messages?.[0]?.text).toBe('built-in summary');
-    await clock.advance(60_000);
-    expect(state.summaries).toBe(1);
-  });
-}
+test('deadline retains auto compaction fallback', async ($, on) => {
+  const { state, clock } = host(on);
+  const pending = $.session.compact({ trigger: 'auto', messages: transcript() });
+  await clock.settle();
+  await clock.advance(15_000);
+  const result = await pending;
+  expect(state.fetches).toBe(1);
+  expect(state.summaries).toBe(1);
+  expect(result.messages?.[0]?.text).toBe('built-in summary');
+  await clock.advance(60_000);
+  expect(state.summaries).toBe(1);
+});
+
+// builtinFallback defaults to 'auto': a timed-out /compact is left as it is, not summarized.
+test('deadline leaves a manual compaction unchanged', async ($, on) => {
+  const { state, clock } = host(on);
+  const pending = $.session.compact({ trigger: 'manual', messages: transcript() });
+  await clock.settle();
+  await clock.advance(15_000);
+  const result = await pending;
+  expect(state.fetches).toBe(1);
+  expect(state.summaries).toBe(0);
+  expect(result.skip).toMatch(/timed out after 15000ms; conversation left as it is$/);
+  await clock.advance(60_000);
+  expect(state.summaries).toBe(0);
+});

@@ -151,8 +151,8 @@ Then add this repository as a plugin marketplace and install the plugin,
 either from the shell or as slash commands inside a session:
 
 ```sh
-claude plugin marketplace add tamaratran/fast-jev-compaction
-claude plugin install fast-jev-compaction@fast-jev-compaction
+claude plugin marketplace add ferrisworks/fast-jev-compaction
+claude plugin install fast-jev-compaction@ferrisworks-jev
 ```
 
 The install prompts for the plugin options (API key, thresholds, `truncateHeadChars`,

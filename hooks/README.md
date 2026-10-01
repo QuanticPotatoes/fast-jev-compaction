@@ -95,7 +95,11 @@ reduction, per-reason counts, state size and request count; a per-call
 compaction when `context.percent` reaches `compactAtPercent`, with an
 in-flight guard. When that request is skipped, the hook waits until the
 context has grown by another 10 percentage points, or dropped below
-`compactAtPercent` again, before it asks again.
+`compactAtPercent` again, before it asks again. Headless sessions (the
+desktop app's Code tab, `claude -p`) refuse `$.session.compact`, so there the
+hook queues `/compact` for when the turn is over and applies the same wait,
+since a queued compaction's outcome does not come back to it. Toasts are not
+shown in those sessions; the outcome is only in the log.
 
 The hook waits at most `compactionTimeoutMs` for the Jev round, across all
 request batches. On a timeout, a plugin-triggered compaction returns a skip

@@ -402,6 +402,11 @@ function notify(
   $.ui.toast(text, { timeoutMs: 15_000 });
 }
 
+/** The host's refusal of `$.session.compact` in a headless (-p / SDK) session. */
+export function isHeadlessRefusal(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('not available in a headless');
+}
+
 export const register: Register = (on: On, options: PluginOptions) => {
   const configured = resolveHookConfig(options);
   let compacting = false;
@@ -462,14 +467,27 @@ export const register: Register = (on: On, options: PluginOptions) => {
   on('turn.complete', async ($, event: TurnCompleteInput, next) => {
     if (event.agentId || event.reason !== 'answer' || compacting) return next(event);
     compacting = true;
+    let used = 0;
     try {
       const { context } = await $.session.usage();
-      const used = context.percent ?? 0;
+      used = context.percent ?? 0;
       if (used < configured.compactAtPercent) retryAtPercent = 0;
       if (used < Math.max(configured.compactAtPercent, retryAtPercent)) return next(event);
       const { skip } = await $.session.compact();
       retryAtPercent = skip === undefined ? 0 : used + RETRY_AFTER_SKIP_PERCENT;
     } catch (error) {
+      if (isHeadlessRefusal(error)) {
+        // SDK sessions (the desktop app's Code tab, `claude -p`) have no
+        // $.session.compact yet. /compact, queued for when this turn is over,
+        // raises the same session.compact event, so the hook above still runs.
+        // Its outcome never comes back here, so wait as after a skip; a compaction
+        // that worked brings usage under compactAtPercent, which clears the wait.
+        retryAtPercent = used + RETRY_AFTER_SKIP_PERCENT;
+        void $.command.run({ command: 'compact' }).catch((queued: unknown) =>
+          $.ui.log(`auto-compact skipped (${queued instanceof Error ? queued.message : String(queued)})`),
+        );
+        return next(event);
+      }
       $.ui.log(
         `auto-compact skipped (${error instanceof Error ? error.message : String(error)})`,
       );

@@ -251,9 +251,27 @@ export async function compactSession(
  * message.id, so `--resume` walks back into the full pre-compaction history
  * (fast-jev-compaction#89, anthropics/claude-code#95328). Costs the engine's own
  * bookkeeping for those records (hidden reasoning, images), not their text or tool pairs.
+ *
+ * The engine hands over one message per record, and a response with parallel
+ * calls is several assistant records sharing a message.id. Fresh records get
+ * fresh ids, so adjacent assistant messages are merged back into one; left
+ * apart, every call but the last loses its result to the engine's pairing repair.
  */
 export function withoutHandles(messages: readonly SessionMessage[]): SessionMessage[] {
-  return messages.map(({ handle: _handle, ...rest }) => rest);
+  const out: SessionMessage[] = [];
+  for (const { handle: _handle, ...message } of messages) {
+    const prev = out.at(-1);
+    if (prev?.role === 'assistant' && message.role === 'assistant') {
+      out[out.length - 1] = {
+        ...prev,
+        text: [prev.text, message.text].filter(Boolean).join('\n\n'),
+        toolUses: [...prev.toolUses, ...message.toolUses],
+      };
+    } else {
+      out.push(message);
+    }
+  }
+  return out;
 }
 
 class CompactionTimeoutError extends Error {

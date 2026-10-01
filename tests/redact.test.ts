@@ -130,4 +130,21 @@ describe('withoutHandles', () => {
     expect(out[0]!.toolUses[0]!.tool_use_id).toBe('u1');
     expect(out[1]!.toolResults![0]!.tool_use_id).toBe('u1');
   });
+
+  it('merges a parallel call split across assistant records back into one message', () => {
+    const use = (id: string) => ({ tool_use_id: id, tool: 'Read', input: {} });
+    const res = (id: string) => ({ tool_use_id: id, text: 'r', isError: false });
+    const out = withoutHandles([
+      { role: 'user', text: 'go', toolUses: [], handle: 'h0' },
+      { role: 'assistant', text: 'reading both', toolUses: [], handle: 'h1' },
+      { role: 'assistant', text: '', toolUses: [use('u1')], handle: 'h2' },
+      { role: 'assistant', text: '', toolUses: [use('u2')], handle: 'h3' },
+      { role: 'user', text: '', toolUses: [], toolResults: [res('u2')], handle: 'h4' },
+      { role: 'user', text: '', toolUses: [], toolResults: [res('u1')], handle: 'h5' },
+      { role: 'assistant', text: 'done', toolUses: [], handle: 'h6' },
+    ] as never);
+    expect(out.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'user', 'assistant']);
+    expect(out[1]).toEqual({ role: 'assistant', text: 'reading both', toolUses: [use('u1'), use('u2')] });
+    expect(out[4]!.text).toBe('done');
+  });
 });

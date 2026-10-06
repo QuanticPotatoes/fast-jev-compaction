@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npx vitest run
+      - run: npm run check:version
+      - name: Require a version bump for shipped changes
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          range="$BASE_SHA...$HEAD_SHA"
+          shipped=false
+
+          if [ -n "$(git diff --name-only "$range" -- src hooks)" ]; then
+            shipped=true
+          fi
+
+          if ! git diff --quiet "$range" -- .claude-plugin/plugin.json; then
+            old=$(git show "$BASE_SHA:.claude-plugin/plugin.json" | node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify(c.userConfig??null))')
+            new=$(node -e 'console.log(JSON.stringify(JSON.parse(require("fs").readFileSync(".claude-plugin/plugin.json","utf8")).userConfig??null))')
+            [ "$old" = "$new" ] || shipped=true
+          fi
+
+          if ! git diff --quiet "$range" -- package.json; then
+            old=$(git show "$BASE_SHA:package.json" | node -e 'const p=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify([p.dependencies??null,p.peerDependencies??null,p.optionalDependencies??null]))')
+            new=$(node -e 'const p=JSON.parse(require("fs").readFileSync("package.json","utf8"));console.log(JSON.stringify([p.dependencies??null,p.peerDependencies??null,p.optionalDependencies??null]))')
+            [ "$old" = "$new" ] || shipped=true
+          fi
+
+          if [ "$shipped" = false ]; then
+            echo "No shipped files changed; no version bump required."
+            exit 0
+          fi
+
+          base_version=$(git show "$BASE_SHA:.claude-plugin/plugin.json" | node -e 'console.log(JSON.parse(require("fs").readFileSync(0,"utf8")).version)')
+          head_version=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(".claude-plugin/plugin.json","utf8")).version)')
+          if [ "$base_version" = "$head_version" ]; then
+            echo "::error::bump the plugin version, or Claude Code will not deliver this change (plugin.json is still $head_version)"
+            exit 1
+          fi
+          echo "Version bumped: $base_version -> $head_version"

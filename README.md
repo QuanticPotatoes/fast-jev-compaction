@@ -54,6 +54,35 @@ replay-based measurement
 (`tools/replay` in considerITman/fast-systemone-compaction), and fact salvage on
 dropped calls (upstream issues [#118](https://github.com/tamaratran/fast-jev-compaction/issues/118) and [#105](https://github.com/tamaratran/fast-jev-compaction/issues/105)).
 
+### Comparison
+
+| | upstream (tamaratran 0.3.0) | ferrisworks 0.5.4 | this fork 0.6.0 |
+| --- | --- | --- | --- |
+| Tool calls kept | Absolute 0.5 threshold | Same | Rank within token budgets (`keepMode: 'rank'`); `threshold` available |
+| Dropped calls | Deleted | Stub note (`dropCalls: false`) | Stub note (`dropCalls: false`) |
+| Post-compaction size guard | Min 25% reduction only | Same | Same + `targetPercent` 45% |
+| Built-in summary fallback | Always, on any failure or small reduction | `builtinFallback: auto` (automatic compactions only) | `builtinFallback: auto` |
+| Secret redaction | No | Yes | Yes |
+| Subagent and speculative compactions | Compacted | Skipped | Skipped |
+| Jev wait bound | None | 15 s | 15 s |
+| Headless sessions | Auto-compact retried every turn | Refusal detected, no retry | Same, with a regression test |
+| Unicode safety | None | Truncated result heads | Result heads, Jev state and a request backstop |
+| CI and versioned releases | No | No | Yes |
+
+### Status of evidence
+
+The problems this fork addresses are measured: the numbers above (0 calls kept
+by the absolute threshold over 4,603 decisions, reduction decaying to 30% within
+one session) come from real sessions. The improvement from rank mode and
+`targetPercent` has not been measured end to end yet; a replay harness is the
+next step.
+
+### Updating
+
+Claude Code updates an installed plugin only when its version changes. Enable
+`autoUpdate: true` on the marketplace entry to receive new versions
+automatically, or run `claude plugin marketplace update quanticpotatoes`.
+
 ## What and why
 
 Most context compaction asks an LLM to summarize old turns. A summary is

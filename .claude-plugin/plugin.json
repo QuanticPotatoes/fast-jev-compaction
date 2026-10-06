@@ -1,6 +1,6 @@
 {
   "name": "fast-jev-compaction",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Verbatim Jev-guided compaction for Claude Code sessions.",
   "license": "MIT",
   "userConfig": {
@@ -105,6 +105,24 @@
       "title": "Truncated tool result head",
       "description": "Characters of a tool result kept when Jev decides its full output is no longer needed; 0 keeps only the note.",
       "default": 300
+    },
+    "trimHostText": {
+      "type": "boolean",
+      "title": "Trim host notices",
+      "description": "Cut system reminders, task notifications, command echoes and hook output (never the user's own prose) outside the newest messages to a short head and a marker.",
+      "default": true
+    },
+    "hostTextHeadChars": {
+      "type": "number",
+      "title": "Trimmed host notice head",
+      "description": "Characters of a trimmed host notice kept before its marker; 0 keeps only the marker.",
+      "default": 200
+    },
+    "taskResultHeadChars": {
+      "type": "number",
+      "title": "Kept subagent report",
+      "description": "Characters of a task notification's result (a subagent's final report) kept when trimming host notices; 0 trims it like any other notice.",
+      "default": 4000
     },
     "model": {
       "type": "string",

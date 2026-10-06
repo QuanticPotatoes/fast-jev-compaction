@@ -1,3 +1,4 @@
+import { trimHostText } from './host-text.js';
 import { noulAnswer } from './request.js';
 import { collectToolCalls, estimateTokens, fitState, goalFromMessages, isPinned } from './state.js';
 import type {
@@ -26,6 +27,9 @@ export const DEFAULT_OPTIONS: ResolvedCompactOptions = {
   maxRequestTokens: 30_000,
   truncateHeadChars: 300,
   dropCalls: false,
+  trimHostText: true,
+  hostTextHeadChars: 200,
+  taskResultHeadChars: 4000,
 };
 
 /** Tokens the request envelope (`model`, key names) adds around state and questions. */
@@ -61,6 +65,16 @@ export function resolveOptions(options: CompactOptions = {}): ResolvedCompactOpt
       Math.floor(finite(options.truncateHeadChars, DEFAULT_OPTIONS.truncateHeadChars)),
     ),
     dropCalls: typeof options.dropCalls === 'boolean' ? options.dropCalls : DEFAULT_OPTIONS.dropCalls,
+    trimHostText:
+      typeof options.trimHostText === 'boolean' ? options.trimHostText : DEFAULT_OPTIONS.trimHostText,
+    hostTextHeadChars: Math.max(
+      0,
+      Math.floor(finite(options.hostTextHeadChars, DEFAULT_OPTIONS.hostTextHeadChars)),
+    ),
+    taskResultHeadChars: Math.max(
+      0,
+      Math.floor(finite(options.taskResultHeadChars, DEFAULT_OPTIONS.taskResultHeadChars)),
+    ),
   };
 }
 
@@ -451,15 +465,19 @@ export function stateGroups(
  * caller decides whether to fall back.
  */
 export async function compact(
-  messages: readonly Message[],
+  original: readonly Message[],
   asker: JevAsker,
   options: CompactOptions = {},
 ): Promise<CompactResult> {
   const started = Date.now();
   const resolved = resolveOptions(options);
+  const host = resolved.trimHostText
+    ? trimHostText(original, resolved)
+    : { messages: [...original], trimmed: 0, charsCut: 0 };
+  const messages = host.messages;
   const calls = collectToolCalls(messages, resolved.preserveRecentMessages);
   const candidates = calls.filter((call) => !call.pinned);
-  const charsBefore = messages.reduce((sum, message) => sum + messageChars(message), 0);
+  const charsBefore = original.reduce((sum, message) => sum + messageChars(message), 0);
 
   let fitted: { tokens: number; stage: string } = { tokens: 0, stage: '' };
   let requests = 0;
@@ -501,7 +519,7 @@ export async function compact(
     messages: kept,
     decisions,
     stats: {
-      messagesBefore: messages.length,
+      messagesBefore: original.length,
       messagesAfter: kept.length,
       charsBefore,
       charsAfter: kept.reduce((sum, message) => sum + messageChars(message), 0),
@@ -511,6 +529,8 @@ export async function compact(
       callsDropped: count(decisions, 'call_dropped'),
       callsStubbed: count(decisions, 'call_stubbed'),
       pinned: count(decisions, 'pinned'),
+      hostTextTrimmed: host.trimmed,
+      hostCharsTrimmed: host.charsCut,
       stateTokens: fitted.tokens,
       stateStage: fitted.stage,
       requests,

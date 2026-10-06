@@ -114,12 +114,17 @@ export function resolveHookConfig(options: PluginOptions): HookConfig {
     'maxStateTokens',
     'maxRequestTokens',
     'truncateHeadChars',
+    'hostTextHeadChars',
+    'taskResultHeadChars',
   ] as const) {
     const value = options[key];
     if (typeof value === 'number' && Number.isFinite(value)) numbers[key] = value;
   }
   if (typeof options['dropCalls'] === 'boolean') {
     numbers.dropCalls = options['dropCalls'];
+  }
+  if (typeof options['trimHostText'] === 'boolean') {
+    numbers.trimHostText = options['trimHostText'];
   }
   const config: HookConfig = {
     ...numbers,
@@ -319,6 +324,9 @@ export function summarize(result: CompactResult): string {
     stats.callsDropped > 0 ? `${stats.callsDropped} call_dropped` : '',
     stats.callsStubbed > 0 ? `${stats.callsStubbed} call_stubbed` : '',
     stats.pinned > 0 ? `${stats.pinned} pinned` : '',
+    stats.hostTextTrimmed > 0
+      ? `${stats.hostTextTrimmed} host notices trimmed (${stats.hostCharsTrimmed} chars)`
+      : '',
   ].filter(Boolean);
   return `${percent(reductionRatio(result))} reduction; ${
     parts.join(', ') || 'no tool calls'

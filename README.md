@@ -46,11 +46,14 @@ base. This fork adds:
   surrogate pairs kept whole in state building plus a request backstop
   (upstream PR [#132](https://github.com/tamaratran/fast-jev-compaction/pull/132)).
 
-Known gap: message text, including host-injected reminders (about 54% of the
-retained "user" text per upstream issue [#70](https://github.com/tamaratran/fast-jev-compaction/issues/70)), is still never compacted.
-Roadmap: cut host-generated notices (upstream PR
-[#78](https://github.com/tamaratran/fast-jev-compaction/pull/78)),
-replay-based measurement
+- Host-generated notices in user turns (`<system-reminder>`,
+  `<task-notification>`, command echoes, hook output; about 54% of the retained
+  "user" text per upstream issue [#70](https://github.com/tamaratran/fast-jev-compaction/issues/70))
+  are cut to a short head outside the pinned messages (`trimHostText`, 0.7.0;
+  idea from upstream PR [#78](https://github.com/tamaratran/fast-jev-compaction/pull/78)).
+
+Known gap: the user's own prose and the assistant's narration are still kept
+verbatim. Roadmap: replay-based measurement
 (`tools/replay` in considerITman/fast-systemone-compaction), and fact salvage on
 dropped calls (upstream issues [#118](https://github.com/tamaratran/fast-jev-compaction/issues/118) and [#105](https://github.com/tamaratran/fast-jev-compaction/issues/105)).
 
@@ -206,6 +209,9 @@ Jev model is also served through OpenRouter, at
 | `maxRequestTokens` | `30000` | Estimated ceiling for state plus one batch of questions |
 | `truncateHeadChars` | `300` | Characters of a dropped tool result retained before its note |
 | `dropCalls` | `false` | `true` removes a no-longer-needed call with its result; `false` leaves a stub of the call |
+| `trimHostText` | `true` | Cut host-generated blocks (`<system-reminder>`, `<task-notification>`, command echoes, hook output; never user prose) outside the pinned messages to a head plus a marker |
+| `hostTextHeadChars` | `200` | Characters of a trimmed host block retained before its marker |
+| `taskResultHeadChars` | `4000` | Characters of a `<task-notification>`'s `<result>` (a subagent's final report) retained; its `task-id`, `status`, `summary`, `output-file` and `tool-use-id` always stay whole; `0` trims it like any host block |
 
 Plugin-only options (set as plugin options, see
 [`hooks/README.md`](hooks/README.md)): `compactAtPercent` (60), `minReductionRatio`

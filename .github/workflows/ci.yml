@@ -33,7 +33,8 @@ jobs:
           range="$BASE_SHA...$HEAD_SHA"
           shipped=false
 
-          if [ -n "$(git diff --name-only "$range" -- src hooks)" ]; then
+          # Docs next to the code (hooks/README.md) do not reach the installed plugin's behavior.
+          if [ -n "$(git diff --name-only "$range" -- src hooks ':(exclude,glob)**/*.md')" ]; then
             shipped=true
           fi
 

@@ -47,7 +47,12 @@ built-in compaction summary with the original messages.
    stays under `maxRequestTokens` (30k by default, under Jev's 32k request
    limit). The same full state is resent with every request; requests run
    concurrently and their answers are merged.
-6. Decisions per call, against `keepThreshold`:
+6. Decisions per call. In `rank` mode (default) Jev's compressed scores are
+   ranked instead of thresholded: results are kept verbatim best-`keepResult`
+   first within `keepResultTokens`, then the best-`keepCall` of the rest keep
+   their input and a truncated result within `keepCallTokens`, the rest are
+   removed (ties go to the more recent call). In `threshold` mode, against
+   `keepThreshold`:
    - `keepResult ≥ threshold` → keep call and result;
    - else `keepCall ≥ threshold` → keep the call, truncate the result to its
      first `truncateHeadChars` characters plus a one-line note;
@@ -113,7 +118,10 @@ Jev model is also served through OpenRouter, at
 | `baseUrl` | `https://api.typesafe.ai/v1/systemone` | System One endpoint |
 | `fetch` | native `fetch` | Injectable fetch implementation for tests |
 | `goal` | last 3 user prompts | Ongoing task description included in the state |
-| `keepThreshold` | `0.5` | Minimum keep probability for a call or result to stay |
+| `keepMode` | `rank` | `rank` keeps the best-scored calls within the token budgets below; `threshold` compares against `keepThreshold` |
+| `keepThreshold` | `0.5` | Threshold mode: minimum keep probability for a call or result to stay |
+| `keepResultTokens` | `12000` | Rank mode: estimated tokens of results kept verbatim |
+| `keepCallTokens` | `4000` | Rank mode: estimated tokens of inputs plus truncated heads kept when the result is dropped |
 | `preserveRecentMessages` | `6` | Newest messages never touched (the first is always kept) |
 | `maxStateTokens` | `25000` | Estimated token ceiling for the state |
 | `maxRequestTokens` | `30000` | Estimated ceiling for state plus one batch of questions |

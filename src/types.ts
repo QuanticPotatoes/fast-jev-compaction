@@ -97,11 +97,19 @@ export interface FittedState {
   stage: string;
 }
 
+export type KeepMode = 'threshold' | 'rank';
+
 export interface CompactOptions {
   /** Ongoing task description; defaults to the last few user prompts. */
   goal?: string;
-  /** Minimum keep probability for a call or result to stay. Default 0.5. */
+  /** `threshold` compares Jev's probabilities to `keepThreshold`; `rank` spends token budgets on the best-scored calls. Default `rank`. */
+  keepMode?: KeepMode;
+  /** Threshold mode: minimum keep probability for a call or result to stay. Default 0.5. */
   keepThreshold?: number;
+  /** Rank mode: estimated tokens of results kept verbatim. Default 12000. */
+  keepResultTokens?: number;
+  /** Rank mode: estimated tokens of inputs (plus truncated heads) kept when the result is dropped. Default 4000. */
+  keepCallTokens?: number;
   /** Newest messages never touched (the first message is always kept). Default 6. */
   preserveRecentMessages?: number;
   /** Estimated token ceiling for the state. Default 25000. */
@@ -123,7 +131,10 @@ export interface CompactOptions {
 
 export interface ResolvedCompactOptions {
   goal: string;
+  keepMode: KeepMode;
   keepThreshold: number;
+  keepResultTokens: number;
+  keepCallTokens: number;
   preserveRecentMessages: number;
   maxStateTokens: number;
   maxRequestTokens: number;

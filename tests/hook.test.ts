@@ -8,6 +8,8 @@ import {
   jevAsker,
   mayUseBuiltin,
   register,
+  estimatePostCompactPercent,
+  exceedsTarget,
   resolveHookConfig,
   summarize,
   toSessionMessages,
@@ -94,6 +96,7 @@ describe('hook config', () => {
     expect(resolveHookConfig({})).toEqual({
       compactAtPercent: 60,
       minReductionRatio: 0.25,
+      targetPercent: 45,
       model: 'jev-latest',
       compactionTimeoutMs: 15000,
       builtinFallback: 'auto',
@@ -118,7 +121,14 @@ describe('hook config', () => {
       minReductionRatio: 0.25,
       compactionTimeoutMs: 15000,
       builtinFallback: 'auto',
+      targetPercent: 45,
     });
+    expect(resolveHookConfig({ keepMode: 'threshold', targetPercent: 30, keepResultTokens: 5 })).toMatchObject({
+      keepMode: 'threshold',
+      targetPercent: 30,
+      keepResultTokens: 5,
+    });
+    expect(resolveHookConfig({ keepMode: 'bogus' })).not.toHaveProperty('keepMode');
     expect(resolveHookConfig({ builtinFallback: 'never' }).builtinFallback).toBe('never');
     expect(resolveHookConfig({ builtinFallback: 'always' }).builtinFallback).toBe('always');
   });
@@ -242,6 +252,21 @@ describe('compaction deadline', () => {
   });
 });
 
+describe('post-compaction target', () => {
+  const stats = { charsBefore: 1000, charsAfter: 500 };
+
+  it('scales the usage percent by the character ratio', () => {
+    expect(estimatePostCompactPercent(80, stats)).toBe(40);
+  });
+
+  it('falls back above the target, accepts at or below it and when usage is missing', () => {
+    expect(exceedsTarget(estimatePostCompactPercent(100, stats), 45)).toBe(true);
+    expect(exceedsTarget(estimatePostCompactPercent(90, stats), 45)).toBe(false);
+    expect(exceedsTarget(estimatePostCompactPercent(undefined, stats), 45)).toBe(false);
+    expect(estimatePostCompactPercent(80, { charsBefore: 0, charsAfter: 0 })).toBeUndefined();
+  });
+});
+
 describe('session message mapping', () => {
   it('returns the engine objects for untouched messages and handle-less copies for rebuilt ones', () => {
     const messages = transcript();
@@ -286,7 +311,7 @@ describe('session message mapping', () => {
 describe('compactSession', () => {
   it('runs the library over the engine fetch and reports the outcome', async () => {
     const bodies: string[] = [];
-    const config = { ...resolveHookConfig({ preserveRecentMessages: 1, dropCalls: true }), apiKey: 'k', model: 'jev-x' };
+    const config = { ...resolveHookConfig({ keepMode: 'threshold', preserveRecentMessages: 1, dropCalls: true }), apiKey: 'k', model: 'jev-x' };
     const { result: output, messages } = await compactSession(
       transcript(),
       config,
@@ -302,7 +327,7 @@ describe('compactSession', () => {
   });
 
   it('splits a long decision log into ui.log lines under the host limit', async () => {
-    const config = { ...resolveHookConfig({ preserveRecentMessages: 1, dropCalls: true }), apiKey: 'k' };
+    const config = { ...resolveHookConfig({ keepMode: 'threshold', preserveRecentMessages: 1, dropCalls: true }), apiKey: 'k' };
     const { result: output } = await compactSession(transcript(), config, jevFetch(() => 0.1));
     const lines = decisionLogLines(output, 60);
     expect(lines).toEqual([
@@ -342,7 +367,7 @@ describe('compactSession', () => {
   });
 
   it('throws on a missing key and on failed requests so the hook falls back', async () => {
-    const config = resolveHookConfig({ preserveRecentMessages: 1 });
+    const config = resolveHookConfig({ keepMode: 'threshold', preserveRecentMessages: 1 });
     await expect(compactSession(transcript(), config, jevFetch(() => 0))).rejects.toThrow(/TYPESAFE_API_KEY/);
     await expect(
       compactSession(transcript(), { ...config, apiKey: 'k' }, async () => ({ status: 500, ok: false, text: 'x' })),
@@ -516,7 +541,7 @@ describe('built-in summary fallback', () => {
 
   it('installs a Jev result that clears the minimum on any trigger', async () => {
     for (const trigger of ['manual', 'auto']) {
-      const { out, delegated, notices } = await compactWith(trigger, jevFetch(() => 0.1), { dropCalls: true });
+      const { out, delegated, notices } = await compactWith(trigger, jevFetch(() => 0.1), { keepMode: 'threshold', dropCalls: true });
       expect(delegated).toBe(false);
       expect((out as { messages: unknown[] }).messages.length).toBeLessThan(transcript().length);
       expect(notices.at(-1)).toMatch(/^kept \d+\/7 messages, no summary/);

@@ -31,6 +31,7 @@ export type BuiltinFallback = 'auto' | 'always' | 'never';
 const HOOK_DEFAULTS = {
   compactAtPercent: 60,
   minReductionRatio: 0.25,
+  targetPercent: 45,
   model: DEFAULT_MODEL,
   compactionTimeoutMs: 15_000,
   builtinFallback: 'auto' as BuiltinFallback,
@@ -66,6 +67,7 @@ export type HookConfig = CompactOptions & {
   envFile?: string;
   compactAtPercent: number;
   minReductionRatio: number;
+  targetPercent: number;
   model: string;
   compactionTimeoutMs: number;
   builtinFallback: BuiltinFallback;
@@ -106,6 +108,8 @@ export function resolveHookConfig(options: PluginOptions): HookConfig {
   const numbers: Partial<Omit<CompactOptions, 'goal'>> = {};
   for (const key of [
     'keepThreshold',
+    'keepResultTokens',
+    'keepCallTokens',
     'preserveRecentMessages',
     'maxStateTokens',
     'maxRequestTokens',
@@ -119,12 +123,16 @@ export function resolveHookConfig(options: PluginOptions): HookConfig {
   }
   const config: HookConfig = {
     ...numbers,
+    ...(options['keepMode'] === 'threshold' || options['keepMode'] === 'rank'
+      ? { keepMode: options['keepMode'] }
+      : {}),
     compactAtPercent: optionNumber(options, 'compactAtPercent', HOOK_DEFAULTS.compactAtPercent),
     minReductionRatio: optionNumber(
       options,
       'minReductionRatio',
       HOOK_DEFAULTS.minReductionRatio,
     ),
+    targetPercent: optionNumber(options, 'targetPercent', HOOK_DEFAULTS.targetPercent),
     model: optionString(options, 'model') ?? HOOK_DEFAULTS.model,
     compactionTimeoutMs: optionNumber(options, 'compactionTimeoutMs', HOOK_DEFAULTS.compactionTimeoutMs),
     builtinFallback: optionFallback(options),
@@ -317,6 +325,25 @@ export function summarize(result: CompactResult): string {
   }; state ~${stats.stateTokens} tokens (${stats.stateStage}) in ${stats.requests} request(s)`;
 }
 
+/**
+ * Context percent after compaction, assuming the window shrinks like the
+ * transcript's characters. Undefined when usage or the character counts give
+ * nothing to scale.
+ */
+export function estimatePostCompactPercent(
+  percentBefore: number | undefined,
+  stats: Pick<CompactResult['stats'], 'charsBefore' | 'charsAfter'>,
+): number | undefined {
+  if (percentBefore === undefined || !Number.isFinite(percentBefore)) return undefined;
+  if (stats.charsBefore <= 0) return undefined;
+  return (percentBefore * stats.charsAfter) / stats.charsBefore;
+}
+
+/** True when the estimate is known and above `targetPercent`. */
+export function exceedsTarget(estimate: number | undefined, targetPercent: number): boolean {
+  return estimate !== undefined && estimate > targetPercent;
+}
+
 const UI_LOG_MAX_CHARS = 4096;
 
 export function decisionLog(result: CompactResult): string {
@@ -468,6 +495,18 @@ export const register: Register = (on: On, options: PluginOptions) => {
       for (const line of decisionLogLines(result)) $.ui.log(line);
       if (reductionRatio(result) < config.minReductionRatio) {
         return giveUp(`below ${percent(config.minReductionRatio)} minimum: ${summarize(result)}`);
+      }
+      let percentBefore: number | undefined;
+      try {
+        percentBefore = (await $.session.usage()).context.percent;
+      } catch {
+        percentBefore = undefined;
+      }
+      const estimate = estimatePostCompactPercent(percentBefore, result.stats);
+      if (exceedsTarget(estimate, config.targetPercent)) {
+        return giveUp(
+          `estimated ~${Math.round(estimate ?? 0)}% context after compaction, above the ${config.targetPercent}% target: ${summarize(result)}`,
+        );
       }
       notify(
         $,

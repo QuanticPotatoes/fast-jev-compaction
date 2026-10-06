@@ -1,6 +1,7 @@
 import { noulAnswer } from './request.js';
 import { collectToolCalls, estimateTokens, fitState, goalFromMessages, isPinned } from './state.js';
 import type {
+  CallAction,
   CallAnswer,
   CallDecision,
   CompactOptions,
@@ -16,7 +17,10 @@ import type {
 
 export const DEFAULT_OPTIONS: ResolvedCompactOptions = {
   goal: '',
+  keepMode: 'rank',
   keepThreshold: 0.5,
+  keepResultTokens: 12_000,
+  keepCallTokens: 4_000,
   preserveRecentMessages: 6,
   maxStateTokens: 25_000,
   maxRequestTokens: 30_000,
@@ -34,7 +38,13 @@ function finite(value: number | undefined, fallback: number): number {
 export function resolveOptions(options: CompactOptions = {}): ResolvedCompactOptions {
   return {
     goal: options.goal ?? DEFAULT_OPTIONS.goal,
+    keepMode: options.keepMode === 'threshold' ? 'threshold' : DEFAULT_OPTIONS.keepMode,
     keepThreshold: finite(options.keepThreshold, DEFAULT_OPTIONS.keepThreshold),
+    keepResultTokens: Math.max(
+      0,
+      finite(options.keepResultTokens, DEFAULT_OPTIONS.keepResultTokens),
+    ),
+    keepCallTokens: Math.max(0, finite(options.keepCallTokens, DEFAULT_OPTIONS.keepCallTokens)),
     preserveRecentMessages: Math.max(
       0,
       Math.floor(
@@ -117,6 +127,95 @@ export function decideCall(
     return { ...base, action: 'stub_call', reason: 'call_stubbed' };
   }
   return { ...base, action: 'drop_call', reason: 'call_dropped' };
+}
+
+/** Estimated tokens a call costs to keep verbatim, or to keep as input plus truncated head. */
+export interface CallSize {
+  resultTokens: number;
+  truncatedTokens: number;
+}
+
+function sizeOf(messages: readonly Message[], call: ToolCall, headChars: number): CallSize {
+  const message = messages[call.resultIndex];
+  const text =
+    message?.toolResults?.find((result) => result.tool_use_id === call.tool_use_id)?.text ?? '';
+  let input = '';
+  try {
+    input = JSON.stringify(call.input);
+  } catch {
+    input = '[unserializable input]';
+  }
+  return {
+    resultTokens: estimateTokens(text),
+    truncatedTokens:
+      estimateTokens(input) +
+      estimateTokens(truncatedResultText(text, call.isError, headChars)),
+  };
+}
+
+/**
+ * Rank-mode decisions, in `calls` order. Jev's scores are compressed, so the
+ * absolute threshold keeps nothing; the best-scored results are kept within
+ * `keepResultTokens`, then the best-scored inputs within `keepCallTokens`.
+ * A call too big for what is left is skipped, not a stop. Ties go to the more
+ * recent call.
+ */
+export function rankDecisions(
+  calls: readonly ToolCall[],
+  answers: ReadonlyMap<string, CallAnswer>,
+  sizes: ReadonlyMap<string, CallSize>,
+  options: Pick<ResolvedCompactOptions, 'keepResultTokens' | 'keepCallTokens'> &
+    Partial<Pick<ResolvedCompactOptions, 'dropCalls'>>,
+): CallDecision[] {
+  const answerOf = (call: ToolCall): CallAnswer =>
+    answers.get(call.id) ?? { keepCall: 1, keepResult: 1 };
+  const order = new Map(calls.map((call, index) => [call.id, index]));
+  const ranked = (score: (call: ToolCall) => number, pool: readonly ToolCall[]): ToolCall[] =>
+    [...pool].sort(
+      (a, b) => score(b) - score(a) || (order.get(b.id) ?? 0) - (order.get(a.id) ?? 0),
+    );
+  const actions = new Map<string, CallAction>();
+  const spend = (
+    pool: readonly ToolCall[],
+    budget: number,
+    cost: (call: ToolCall) => number,
+    action: CallAction,
+  ): void => {
+    let used = 0;
+    for (const call of pool) {
+      const tokens = cost(call);
+      if (budget <= 0 || used + tokens > budget) continue;
+      used += tokens;
+      actions.set(call.id, action);
+    }
+  };
+  const candidates = calls.filter((call) => !call.pinned);
+  const sizeOfCall = (call: ToolCall): CallSize =>
+    sizes.get(call.id) ?? { resultTokens: 0, truncatedTokens: 0 };
+  spend(
+    ranked((call) => answerOf(call).keepResult, candidates),
+    options.keepResultTokens,
+    (call) => sizeOfCall(call).resultTokens,
+    'keep',
+  );
+  spend(
+    ranked(
+      (call) => answerOf(call).keepCall,
+      candidates.filter((call) => !actions.has(call.id)),
+    ),
+    options.keepCallTokens,
+    (call) => sizeOfCall(call).truncatedTokens,
+    'drop_result',
+  );
+  return calls.map((call) => {
+    const base = { id: call.id, tool: call.tool, ...answerOf(call) };
+    if (call.pinned) return { ...base, action: 'keep', reason: 'pinned' };
+    const action = actions.get(call.id);
+    if (action === 'keep') return { ...base, action, reason: 'kept' };
+    if (action === 'drop_result') return { ...base, action, reason: 'result_dropped' };
+    if (options.dropCalls === false) return { ...base, action: 'stub_call', reason: 'call_stubbed' };
+    return { ...base, action: 'drop_call', reason: 'call_dropped' };
+  });
 }
 
 async function askBatch(
@@ -376,9 +475,22 @@ export async function compact(
     for (const map of answered) for (const [id, answer] of map) answers.set(id, answer);
   }
 
-  const decisions = calls.map((call) =>
-    decideCall(call, answers.get(call.id) ?? { keepCall: 1, keepResult: 1 }, resolved),
-  );
+  const decisions =
+    resolved.keepMode === 'rank'
+      ? rankDecisions(
+          calls,
+          answers,
+          new Map(
+            candidates.map((call) => [
+              call.id,
+              sizeOf(messages, call, resolved.truncateHeadChars),
+            ]),
+          ),
+          resolved,
+        )
+      : calls.map((call) =>
+          decideCall(call, answers.get(call.id) ?? { keepCall: 1, keepResult: 1 }, resolved),
+        );
   const kept = applyDecisions(
     messages,
     decisions,

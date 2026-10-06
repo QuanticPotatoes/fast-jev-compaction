@@ -22,11 +22,29 @@
       "description": "Path to a dotenv-style file to read the key from when neither the environment nor the settings hold one. An absolute path, or one under the session's working directory.",
       "default": ""
     },
+    "keepMode": {
+      "type": "string",
+      "title": "Keep mode",
+      "description": "rank keeps the best-scored tool calls within the token budgets below (Jev scores are compressed, so an absolute threshold keeps almost nothing); threshold applies the keep threshold.",
+      "default": "rank"
+    },
     "keepThreshold": {
       "type": "number",
       "title": "Keep threshold",
-      "description": "Minimum Jev probability that a tool call or tool result is still needed; below it the item is removed.",
+      "description": "Threshold mode only: minimum Jev probability that a tool call or tool result is still needed; below it the item is removed.",
       "default": 0.5
+    },
+    "keepResultTokens": {
+      "type": "number",
+      "title": "Kept result tokens",
+      "description": "Rank mode: estimated tokens of tool results kept verbatim, best-scored first.",
+      "default": 12000
+    },
+    "keepCallTokens": {
+      "type": "number",
+      "title": "Kept call tokens",
+      "description": "Rank mode: estimated tokens of tool inputs (with a truncated result head) kept for calls whose full result is dropped.",
+      "default": 4000
     },
     "preserveRecentMessages": {
       "type": "number",
@@ -63,6 +81,12 @@
       "title": "Built-in summary fallback",
       "description": "Which compactions fall back to Claude Code's built-in summary when Jev fails or frees less than the minimum: auto (only Claude Code's own automatic compaction; others leave the conversation as it is), always, or never.",
       "default": "auto"
+    },
+    "targetPercent": {
+      "type": "number",
+      "title": "Target context percentage",
+      "description": "Falls back to the built-in summary when the estimated context after compaction would still exceed this percentage of the window.",
+      "default": 45
     },
     "maxStateTokens": {
       "type": "number",

@@ -11,8 +11,11 @@ import {
   fitState,
   JevClient,
   parseJevResponse,
+  rankDecisions,
   reductionRatio,
   resolveOptions,
+  type CallAnswer,
+  type CallSize,
   type HistoryToolCall,
   type JevAsker,
   type JevQuestions,
@@ -412,6 +415,102 @@ describe('decisions', () => {
   });
 });
 
+describe('rank decisions', () => {
+  const pool: ToolCall[] = ['t1', 't2', 't3', 't4'].map((id, i) => ({
+    id,
+    tool_use_id: `u${i}`,
+    tool: 'Read',
+    input: {},
+    callIndex: i * 2,
+    resultIndex: i * 2 + 1,
+    resultChars: 100,
+    isError: false,
+    pinned: false,
+  }));
+  const sizes = new Map<string, CallSize>(
+    pool.map((c) => [c.id, { resultTokens: 100, truncatedTokens: 10 }]),
+  );
+  const answers = (scores: Record<string, [number, number]>) =>
+    new Map<string, CallAnswer>(
+      Object.entries(scores).map(([id, [keepCall, keepResult]]) => [id, { keepCall, keepResult }]),
+    );
+  const actions = (scores: Record<string, [number, number]>, budgets: [number, number], calls = pool) =>
+    rankDecisions(calls, answers(scores), sizes, {
+      keepResultTokens: budgets[0],
+      keepCallTokens: budgets[1],
+    }).map((d) => d.action);
+
+  it('keeps the best-scored results within budget even when every score is under 0.5', () => {
+    const scores = { t1: [0.1, 0.12], t2: [0.2, 0.3], t3: [0.15, 0.2], t4: [0.3, 0.1] } as const;
+    const out = rankDecisions(pool, answers(scores), sizes, { keepResultTokens: 200, keepCallTokens: 10 });
+    expect(out.map((d) => [d.action, d.reason])).toEqual([
+      ['drop_call', 'call_dropped'],
+      ['keep', 'kept'],
+      ['keep', 'kept'],
+      ['drop_result', 'result_dropped'],
+    ]);
+  });
+
+  it('drops every call when both budgets are 0', () => {
+    const scores = { t1: [0.9, 0.9], t2: [0.9, 0.9], t3: [0.9, 0.9], t4: [0.9, 0.9] } as const;
+    expect(actions(scores, [0, 0])).toEqual(['drop_call', 'drop_call', 'drop_call', 'drop_call']);
+  });
+
+  it('prefers the more recent call on equal scores', () => {
+    const scores = { t1: [0.2, 0.2], t2: [0.2, 0.2], t3: [0.2, 0.2], t4: [0.2, 0.2] } as const;
+    expect(actions(scores, [200, 0])).toEqual(['drop_call', 'drop_call', 'keep', 'keep']);
+    expect(actions(scores, [0, 20])).toEqual(['drop_call', 'drop_call', 'drop_result', 'drop_result']);
+  });
+
+  it('skips a call too big for the remaining budget and never ranks pinned ones', () => {
+    const big = new Map(sizes).set('t2', { resultTokens: 500, truncatedTokens: 10 });
+    const calls = [pool[0]!, pool[1]!, { ...pool[2]!, pinned: true }];
+    const out = rankDecisions(
+      calls,
+      answers({ t1: [0.1, 0.1], t2: [0.9, 0.9], t3: [0.9, 0.9] }),
+      big,
+      { keepResultTokens: 150, keepCallTokens: 0 },
+    );
+    expect(out.map((d) => [d.action, d.reason])).toEqual([
+      ['keep', 'kept'],
+      ['drop_call', 'call_dropped'],
+      ['keep', 'pinned'],
+    ]);
+  });
+
+  it('stubs non-kept calls by default and drops them with dropCalls', () => {
+    const big = new Map([
+      ['t1', { resultTokens: 100, truncatedTokens: 100 }],
+      ['t2', { resultTokens: 100, truncatedTokens: 100 }],
+    ]);
+    const calls = [
+      { id: 't1', tool: 'Read', pinned: false },
+      { id: 't2', tool: 'Bash', pinned: true },
+    ] as Parameters<typeof rankDecisions>[0];
+    const ans = new Map([['t1', { keepCall: 0.1, keepResult: 0.1 }]]);
+    const budgets = { keepResultTokens: 0, keepCallTokens: 0 };
+    expect(rankDecisions(calls, ans, big, { ...budgets, dropCalls: false })[0]!.action).toBe('stub_call');
+    expect(rankDecisions(calls, ans, big, { ...budgets, dropCalls: true })[0]!.action).toBe('drop_call');
+  });
+
+  it('is the default mode, with threshold mode still available', async () => {
+    expect(resolveOptions().keepMode).toBe('rank');
+    expect(resolveOptions({ keepMode: 'threshold' }).keepMode).toBe('threshold');
+    expect(resolveOptions({ keepResultTokens: -5, keepCallTokens: Number.NaN })).toMatchObject({
+      keepResultTokens: 0,
+      keepCallTokens: 4_000,
+    });
+    const output = await compact(transcript(), fakeJev(() => 0.2), { preserveRecentMessages: 1 });
+    expect(output.stats.kept + output.stats.resultsDropped).toBeGreaterThan(0);
+    const threshold = await compact(transcript(), fakeJev(() => 0.2), {
+      keepMode: 'threshold',
+      dropCalls: true,
+      preserveRecentMessages: 1,
+    });
+    expect(threshold.stats.callsDropped).toBe(threshold.stats.calls - threshold.stats.pinned);
+  });
+});
+
 describe('compact', () => {
   it('resends the full state with every batch and merges the answers', async () => {
     const seen: Seen[] = [];
@@ -424,7 +523,7 @@ describe('compact', () => {
     const output = await compact(
       messages,
       fakeJev((name) => (name.startsWith('call_') ? 0.9 : 0.1), seen),
-      { preserveRecentMessages: 1, maxRequestTokens: stateTokens + 150 },
+      { keepMode: 'threshold', preserveRecentMessages: 1, maxRequestTokens: stateTokens + 150 },
     );
 
     expect(output.stats.requests).toBe(seen.length);

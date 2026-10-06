@@ -5,6 +5,55 @@ every tool call and result is scored in one fast request, stale ones are
 dropped or truncated, everything kept stays verbatim. Also usable as an npm
 library.
 
+## About this fork
+
+This is `QuanticPotatoes/fast-jev-compaction`. Lineage:
+[tamaratran/fast-jev-compaction](https://github.com/tamaratran/fast-jev-compaction)
+(upstream, frozen since 2026-09-17 with about 60 unmerged PRs) →
+[ferrisworks/fast-jev-compaction](https://github.com/ferrisworks/fast-jev-compaction)
+(integration fork that merged about 13 upstream PRs: secret redaction
+([#98](https://github.com/tamaratran/fast-jev-compaction/pull/98)),
+subagent/speculative compaction filter
+([#112](https://github.com/tamaratran/fast-jev-compaction/pull/112)),
+code-point-safe truncation
+([#110](https://github.com/tamaratran/fast-jev-compaction/pull/110)),
+Jev wait bound ([#117](https://github.com/tamaratran/fast-jev-compaction/pull/117)),
+auto-only built-in fallback
+([#103](https://github.com/tamaratran/fast-jev-compaction/pull/103)),
+dense-token estimate ([#85](https://github.com/tamaratran/fast-jev-compaction/pull/85)),
+stub-by-default dropped calls, and more) → this fork. Thanks to both for the
+base. This fork adds:
+
+- **`keepMode: 'rank'` (new default)** with `keepResultTokens` (12000) and
+  `keepCallTokens` (4000): keep the best-scored results and inputs within token
+  budgets, because Jev's scores are compressed. Measured on 4,603 decisions over
+  60 sessions, `keepCall` was about 0.1–0.3 (max 0.58), so the absolute 0.5
+  threshold kept 0 calls; upstream issues
+  [#56](https://github.com/tamaratran/fast-jev-compaction/issues/56),
+  [#26](https://github.com/tamaratran/fast-jev-compaction/issues/26) and
+  [#52](https://github.com/tamaratran/fast-jev-compaction/issues/52) report the
+  same. `keepMode: 'threshold'` keeps the old behavior.
+- **`targetPercent` (default 45)**: the plugin estimates the post-compaction
+  context percentage (usage percent × chars after / chars before) and, above
+  the target, gives up the Jev result (built-in summary on automatic
+  compactions, skip otherwise). All message text is kept verbatim, so the
+  post-compaction floor rises with each compaction: reduction decayed
+  77% → 68% → 82% → 63% → 46% → 32% → 30% within one session (upstream issue
+  [#70](https://github.com/tamaratran/fast-jev-compaction/issues/70) reports
+  36K → 87K tokens over 6 rounds).
+- A regression test for headless sessions (upstream PR
+  [#125](https://github.com/tamaratran/fast-jev-compaction/pull/125)) and
+  surrogate pairs kept whole in state building plus a request backstop
+  (upstream PR [#132](https://github.com/tamaratran/fast-jev-compaction/pull/132)).
+
+Known gap: message text, including host-injected reminders (about 54% of the
+retained "user" text per upstream issue [#70](https://github.com/tamaratran/fast-jev-compaction/issues/70)), is still never compacted.
+Roadmap: cut host-generated notices (upstream PR
+[#78](https://github.com/tamaratran/fast-jev-compaction/pull/78)),
+replay-based measurement
+(`tools/replay` in considerITman/fast-systemone-compaction), and fact salvage on
+dropped calls (upstream issues [#118](https://github.com/tamaratran/fast-jev-compaction/issues/118) and [#105](https://github.com/tamaratran/fast-jev-compaction/issues/105)).
+
 ## What and why
 
 Most context compaction asks an LLM to summarize old turns. A summary is
@@ -47,8 +96,9 @@ built-in compaction summary with the original messages.
    stays under `maxRequestTokens` (30k by default, under Jev's 32k request
    limit). The same full state is resent with every request; requests run
    concurrently and their answers are merged.
-6. Decisions per call. In `rank` mode (default) Jev's compressed scores are
-   ranked instead of thresholded: results are kept verbatim best-`keepResult`
+6. Decisions per call. Jev's scores are compressed (keepCall rarely exceeds
+   0.3), so the default `rank` mode ranks them instead of applying an absolute
+   threshold: results are kept verbatim best-`keepResult`
    first within `keepResultTokens`, then the best-`keepCall` of the rest keep
    their input and a truncated result within `keepCallTokens`, the rest are
    removed (ties go to the more recent call). In `threshold` mode, against
@@ -128,6 +178,13 @@ Jev model is also served through OpenRouter, at
 | `truncateHeadChars` | `300` | Characters of a dropped tool result retained before its note |
 | `dropCalls` | `false` | `true` removes a no-longer-needed call with its result; `false` leaves a stub of the call |
 
+Plugin-only options (set as plugin options, see
+[`hooks/README.md`](hooks/README.md)): `compactAtPercent` (60), `minReductionRatio`
+(0.25), `compactionTimeoutMs` (15000), `builtinFallback` (`auto`),
+`targetPercent` (45: above this estimated post-compaction context percentage,
+the Jev result is given up for the built-in summary on automatic compactions,
+or skipped otherwise), `envFile`.
+
 `result.stats` reports message and character counts before and after, the
 per-reason decision counts, the state size in estimated tokens, which fitting
 stage was needed, and the number of requests.
@@ -164,8 +221,8 @@ Then add this repository as a plugin marketplace and install the plugin,
 either from the shell or as slash commands inside a session:
 
 ```sh
-claude plugin marketplace add ferrisworks/fast-jev-compaction
-claude plugin install fast-jev-compaction@ferrisworks-jev
+claude plugin marketplace add QuanticPotatoes/fast-jev-compaction
+claude plugin install fast-jev-compaction@quanticpotatoes
 ```
 
 The install prompts for the plugin options (API key, thresholds, `truncateHeadChars`,

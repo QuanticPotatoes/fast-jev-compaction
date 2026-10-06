@@ -31,8 +31,8 @@ hooks surface before installing or loading it:
 export CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1
 export TYPESAFE_API_KEY="<your TypeSafe key>"
 
-claude plugin marketplace add ferrisworks/fast-jev-compaction
-claude plugin install fast-jev-compaction@ferrisworks-jev
+claude plugin marketplace add QuanticPotatoes/fast-jev-compaction
+claude plugin install fast-jev-compaction@quanticpotatoes
 ```
 
 For local development:
@@ -48,12 +48,16 @@ The plugin declares these `userConfig` values in
 
 | Option | Default |
 | --- | ---: |
-| `keepThreshold` | `0.5` |
+| `keepMode` | `rank` |
+| `keepThreshold` | `0.5` (threshold mode only) |
+| `keepResultTokens` | `12000` |
+| `keepCallTokens` | `4000` |
 | `preserveRecentMessages` | `6` |
 | `compactAtPercent` | `60` |
 | `minReductionRatio` | `0.25` |
 | `compactionTimeoutMs` | `15000` |
 | `builtinFallback` | `auto` |
+| `targetPercent` | `45` |
 | `maxStateTokens` | `25000` |
 | `maxRequestTokens` | `30000` |
 | `truncateHeadChars` | `300` |
@@ -76,7 +80,7 @@ nothing earlier held a key, and a file that cannot be read is not an error:
 the key is simply not there, and the hook falls back as it would.
 
 Every option except `apiKey`, `baseUrl`, `envFile`, `compactAtPercent`,
-`minReductionRatio`, `compactionTimeoutMs`, `builtinFallback` and `model` is passed
+`minReductionRatio`, `compactionTimeoutMs`, `builtinFallback`, `targetPercent` and `model` is passed
 straight to the library; see the root README for what they do. The `session.compact` hook runs the Jev requests
 concurrently. If Jev fails, the response is malformed, the key is unavailable,
 the history cannot be fitted into the state budget, or the estimated reduction
@@ -100,6 +104,13 @@ desktop app's Code tab, `claude -p`) refuse `$.session.compact`, so there the
 hook queues `/compact` for when the turn is over and applies the same wait,
 since a queued compaction's outcome does not come back to it. Toasts are not
 shown in those sessions; the outcome is only in the log.
+
+`targetPercent` guards against a post-compaction floor that rises each time,
+because all message text is kept verbatim. The hook estimates the context
+percentage after compaction (current usage percent times chars after / chars
+before); when it exceeds `targetPercent`, the Jev result is given up through
+the same path as `minReductionRatio` (built-in summary on automatic
+compactions, skip otherwise).
 
 The hook waits at most `compactionTimeoutMs` for the Jev round, across all
 request batches. On a timeout, a plugin-triggered compaction returns a skip

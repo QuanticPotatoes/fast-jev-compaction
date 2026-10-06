@@ -9,10 +9,14 @@ root, so the hook imports it directly) and maps the result back onto session
 messages. User and assistant prose is never touched; only host-generated blocks (system reminders, task notifications, command echoes, hook output) outside the pinned messages are cut to a head and a marker (`trimHostText`). Jev is sent the whole
 conversation as `state` (tool outputs replaced by a one-line note) and, for
 every tool call outside the pinned first and newest messages, two questions:
-whether the call should stay and whether its full output should stay. An
-item is kept when Jev's probability reaches `keepThreshold`; a dropped result
-is truncated to its first `truncateHeadChars` characters plus a one-line note,
-and a dropped call disappears with its result.
+whether the call should stay and whether its full output should stay. In
+the default `rank` mode the best-scored results are kept verbatim within
+`keepResultTokens`, then the best-scored calls keep their input and a
+truncated result within `keepCallTokens`; with `keepMode: threshold` an item
+is kept when Jev's probability reaches `keepThreshold`. A dropped result is
+truncated to its first `truncateHeadChars` characters plus a one-line note,
+and a dropped call leaves a stub (`dropCalls: false`, the default) or
+disappears with its result (`dropCalls: true`).
 
 The state is fitted into `maxStateTokens` in stages: tool inputs are
 truncated, then long texts are abridged (oldest first, pinned messages last),
@@ -87,7 +91,7 @@ the key is simply not there, and the hook falls back as it would.
 
 Every option except `apiKey`, `baseUrl`, `envFile`, `compactAtPercent`,
 `minReductionRatio`, `compactionTimeoutMs`, `builtinFallback`, `targetPercent` and `model` is passed
-straight to the library; see the root README for what they do. The `session.compact` hook runs the Jev requests
+straight to the library; see [docs/library.md](../docs/library.md#options) for what they do. The `session.compact` hook runs the Jev requests
 concurrently. If Jev fails, the response is malformed, the key is unavailable,
 the history cannot be fitted into the state budget, or the estimated reduction
 is below `minReductionRatio`, what happens next depends on the compaction's

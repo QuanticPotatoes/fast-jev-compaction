@@ -1,6 +1,6 @@
 {
   "name": "fast-jev-compaction",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Verbatim Jev-guided compaction for Claude Code sessions.",
   "license": "MIT",
   "userConfig": {
@@ -123,6 +123,24 @@
       "title": "Kept subagent report",
       "description": "Characters of a task notification's result (a subagent's final report) kept when trimming host notices; 0 trims it like any other notice.",
       "default": 4000
+    },
+    "oldProse": {
+      "type": "string",
+      "title": "Old prose",
+      "description": "What becomes of user and assistant prose older than the last `recentTurns` user turns: `keep` (verbatim, default), `digest` (deterministic extractive digest) or `summarize` (summary written by `proseModel`, falling back to the digest).",
+      "default": "keep"
+    },
+    "recentTurns": {
+      "type": "number",
+      "title": "Recent turns",
+      "description": "User turns kept outside the `oldProse` digest or summary.",
+      "default": 8
+    },
+    "proseModel": {
+      "type": "string",
+      "title": "Summary model",
+      "description": "Model alias or id that writes the summary when `oldProse` is `summarize`, through the session's own client.",
+      "default": "haiku"
     },
     "model": {
       "type": "string",

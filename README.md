@@ -52,7 +52,7 @@ base. This fork adds:
   are cut to a short head outside the pinned messages (`trimHostText`, 0.7.0;
   idea from upstream PR [#78](https://github.com/tamaratran/fast-jev-compaction/pull/78)).
 
-Known gap: the user's own prose and the assistant's narration are still kept
+Known gap: unless `oldProse` is `digest` or `summarize` (0.8.0, off by default), the user's own prose and the assistant's narration are kept
 verbatim. Roadmap: replay-based measurement
 (`tools/replay` in considerITman/fast-systemone-compaction), and fact salvage on
 dropped calls (upstream issues [#118](https://github.com/tamaratran/fast-jev-compaction/issues/118) and [#105](https://github.com/tamaratran/fast-jev-compaction/issues/105)).
@@ -211,6 +211,8 @@ Jev model is also served through OpenRouter, at
 | `dropCalls` | `false` | `true` removes a no-longer-needed call with its result; `false` leaves a stub of the call |
 | `trimHostText` | `true` | Cut host-generated blocks (`<system-reminder>`, `<task-notification>`, command echoes, hook output; never user prose) outside the pinned messages to a head plus a marker |
 | `hostTextHeadChars` | `200` | Characters of a trimmed host block retained before its marker |
+| `oldProse` | `keep` | `digest` replaces everything before the last `recentTurns` user turns with a deterministic digest (first prompt, per-turn prompt head and final reply head, tool names, referenced paths and ids); `summarize` with a model-written summary (plugin: `proseModel`, falls back to the digest; the library needs a `summarize` callback in `compact`'s fourth argument). An earlier digest or summary is folded, not chained |
+| `recentTurns` | `8` | User turns kept outside `oldProse` condensing |
 | `taskResultHeadChars` | `4000` | Characters of a `<task-notification>`'s `<result>` (a subagent's final report) retained; its `task-id`, `status`, `summary`, `output-file` and `tool-use-id` always stay whole; `0` trims it like any host block |
 
 Plugin-only options (set as plugin options, see

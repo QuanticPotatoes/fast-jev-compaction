@@ -12,6 +12,7 @@ import { compact, reductionRatio, resolveOptions } from '../src/compact.js';
 import { parseEnv } from '../src/dotenv.js';
 import { redactDeep } from '../src/redact.js';
 import { buildJevRequest, DEFAULT_MODEL, parseJevResponse } from '../src/request.js';
+import type { ProseSummarizer } from '../src/prose.js';
 import type {
   CompactOptions,
   CompactResult,
@@ -35,6 +36,7 @@ const HOOK_DEFAULTS = {
   model: DEFAULT_MODEL,
   compactionTimeoutMs: 15_000,
   builtinFallback: 'auto' as BuiltinFallback,
+  proseModel: 'haiku',
 };
 
 /**
@@ -71,6 +73,8 @@ export type HookConfig = CompactOptions & {
   model: string;
   compactionTimeoutMs: number;
   builtinFallback: BuiltinFallback;
+  /** Model alias or id `oldProse: 'summarize'` writes its summary with, through the session's own client. */
+  proseModel: string;
 };
 
 function optionNumber(options: PluginOptions, key: string, fallback: number): number {
@@ -116,6 +120,7 @@ export function resolveHookConfig(options: PluginOptions): HookConfig {
     'truncateHeadChars',
     'hostTextHeadChars',
     'taskResultHeadChars',
+    'recentTurns',
   ] as const) {
     const value = options[key];
     if (typeof value === 'number' && Number.isFinite(value)) numbers[key] = value;
@@ -128,6 +133,11 @@ export function resolveHookConfig(options: PluginOptions): HookConfig {
   }
   const config: HookConfig = {
     ...numbers,
+    ...(options['oldProse'] === 'keep' ||
+    options['oldProse'] === 'summarize' ||
+    options['oldProse'] === 'digest'
+      ? { oldProse: options['oldProse'] }
+      : {}),
     ...(options['keepMode'] === 'threshold' || options['keepMode'] === 'rank'
       ? { keepMode: options['keepMode'] }
       : {}),
@@ -141,6 +151,7 @@ export function resolveHookConfig(options: PluginOptions): HookConfig {
     model: optionString(options, 'model') ?? HOOK_DEFAULTS.model,
     compactionTimeoutMs: optionNumber(options, 'compactionTimeoutMs', HOOK_DEFAULTS.compactionTimeoutMs),
     builtinFallback: optionFallback(options),
+    proseModel: optionString(options, 'proseModel') ?? HOOK_DEFAULTS.proseModel,
   };
   if (config.compactionTimeoutMs <= 0) config.compactionTimeoutMs = HOOK_DEFAULTS.compactionTimeoutMs;
   const apiKey = optionString(options, 'apiKey');
@@ -247,12 +258,14 @@ export async function compactSession(
   config: HookConfig,
   fetchFn: HookFetch,
   onRedact?: (count: number) => void,
+  summarize?: ProseSummarizer,
 ): Promise<SessionCompaction> {
   if (!config.apiKey) throw new Error('TYPESAFE_API_KEY is not configured');
   const result = await compact(
     messages,
     jevAsker(fetchFn, config.apiKey, config.model, config.baseUrl, onRedact),
     config,
+    { summarize },
   );
   return { result, messages: toSessionMessages(messages, result.messages) };
 }
@@ -324,6 +337,9 @@ export function summarize(result: CompactResult): string {
     stats.callsDropped > 0 ? `${stats.callsDropped} call_dropped` : '',
     stats.callsStubbed > 0 ? `${stats.callsStubbed} call_stubbed` : '',
     stats.pinned > 0 ? `${stats.pinned} pinned` : '',
+    stats.oldProse !== 'keep'
+      ? `old prose ${stats.oldProse}: ${stats.oldProseReplaced} messages, ${stats.oldProseCharsBefore}→${stats.oldProseCharsAfter} chars`
+      : '',
     stats.hostTextTrimmed > 0
       ? `${stats.hostTextTrimmed} host notices trimmed (${stats.hostCharsTrimmed} chars)`
       : '',
@@ -495,6 +511,8 @@ export const register: Register = (on: On, options: PluginOptions) => {
             (count) => {
               redacted += count;
             },
+            ({ system, prompt, maxTokens }) =>
+              $.model.complete({ model: config.proseModel, system, prompt, maxTokens }),
           ),
         config.compactionTimeoutMs,
         (ms, options) => $.clock.sleep(ms, options),

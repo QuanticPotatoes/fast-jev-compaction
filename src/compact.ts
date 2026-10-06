@@ -1,4 +1,5 @@
 import { trimHostText } from './host-text.js';
+import { condenseOldProse, DEFAULT_RECENT_TURNS, type ProseSummarizer } from './prose.js';
 import { noulAnswer } from './request.js';
 import { collectToolCalls, estimateTokens, fitState, goalFromMessages, isPinned } from './state.js';
 import type {
@@ -30,6 +31,8 @@ export const DEFAULT_OPTIONS: ResolvedCompactOptions = {
   trimHostText: true,
   hostTextHeadChars: 200,
   taskResultHeadChars: 4000,
+  oldProse: 'keep',
+  recentTurns: DEFAULT_RECENT_TURNS,
 };
 
 /** Tokens the request envelope (`model`, key names) adds around state and questions. */
@@ -74,6 +77,14 @@ export function resolveOptions(options: CompactOptions = {}): ResolvedCompactOpt
     taskResultHeadChars: Math.max(
       0,
       Math.floor(finite(options.taskResultHeadChars, DEFAULT_OPTIONS.taskResultHeadChars)),
+    ),
+    oldProse:
+      options.oldProse === 'digest' || options.oldProse === 'summarize'
+        ? options.oldProse
+        : DEFAULT_OPTIONS.oldProse,
+    recentTurns: Math.max(
+      1,
+      Math.floor(finite(options.recentTurns, DEFAULT_OPTIONS.recentTurns)),
     ),
   };
 }
@@ -468,12 +479,14 @@ export async function compact(
   original: readonly Message[],
   asker: JevAsker,
   options: CompactOptions = {},
+  deps: { summarize?: ProseSummarizer } = {},
 ): Promise<CompactResult> {
   const started = Date.now();
   const resolved = resolveOptions(options);
+  const prose = await condenseOldProse(original, resolved, deps.summarize);
   const host = resolved.trimHostText
-    ? trimHostText(original, resolved)
-    : { messages: [...original], trimmed: 0, charsCut: 0 };
+    ? trimHostText(prose.messages, resolved)
+    : { messages: prose.messages, trimmed: 0, charsCut: 0 };
   const messages = host.messages;
   const calls = collectToolCalls(messages, resolved.preserveRecentMessages);
   const candidates = calls.filter((call) => !call.pinned);
@@ -531,6 +544,10 @@ export async function compact(
       pinned: count(decisions, 'pinned'),
       hostTextTrimmed: host.trimmed,
       hostCharsTrimmed: host.charsCut,
+      oldProse: prose.applied,
+      oldProseReplaced: prose.replaced,
+      oldProseCharsBefore: prose.charsBefore,
+      oldProseCharsAfter: prose.charsAfter,
       stateTokens: fitted.tokens,
       stateStage: fitted.stage,
       requests,

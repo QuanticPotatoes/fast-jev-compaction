@@ -99,6 +99,9 @@ export interface FittedState {
 
 export type KeepMode = 'threshold' | 'rank';
 
+/** What becomes of prose older than `recentTurns` user turns: kept verbatim, summarized by a model, or reduced to a deterministic digest. */
+export type OldProseMode = 'keep' | 'summarize' | 'digest';
+
 export interface CompactOptions {
   /** Ongoing task description; defaults to the last few user prompts. */
   goal?: string;
@@ -137,6 +140,15 @@ export interface CompactOptions {
   hostTextHeadChars?: number;
   /** Characters of a task-notification's `<result>` (a subagent's final report) retained; 0 trims it like any host block. Default 4000. */
   taskResultHeadChars?: number;
+  /**
+   * `digest` replaces everything before the last `recentTurns` user turns with
+   * a deterministic extractive digest, `summarize` with a model-written summary
+   * (needs a summarizer; falls back to the digest). The recent turns are
+   * compacted as usual. Default `keep`.
+   */
+  oldProse?: OldProseMode;
+  /** User turns kept outside `oldProse` condensing. Default 8. */
+  recentTurns?: number;
 }
 
 export interface ResolvedCompactOptions {
@@ -153,6 +165,8 @@ export interface ResolvedCompactOptions {
   trimHostText: boolean;
   hostTextHeadChars: number;
   taskResultHeadChars: number;
+  oldProse: OldProseMode;
+  recentTurns: number;
 }
 
 export interface CompactResult {
@@ -173,6 +187,11 @@ export interface CompactResult {
     /** Messages whose host blocks were trimmed, and the characters that removed. */
     hostTextTrimmed: number;
     hostCharsTrimmed: number;
+    /** Which `oldProse` mechanism replaced the old prefix (`keep`: none), the messages it replaced, and their characters before and after. */
+    oldProse: OldProseMode;
+    oldProseReplaced: number;
+    oldProseCharsBefore: number;
+    oldProseCharsAfter: number;
     stateTokens: number;
     /** Which fitting stage the state needed, '' when no request was made. */
     stateStage: string;

@@ -100,6 +100,7 @@ describe('hook config', () => {
       model: 'jev-latest',
       compactionTimeoutMs: 15000,
       builtinFallback: 'auto',
+      proseModel: 'haiku',
     });
     expect(
       resolveHookConfig({
@@ -121,6 +122,7 @@ describe('hook config', () => {
       minReductionRatio: 0.25,
       compactionTimeoutMs: 15000,
       builtinFallback: 'auto',
+      proseModel: 'haiku',
       targetPercent: 45,
     });
     expect(resolveHookConfig({ keepMode: 'threshold', targetPercent: 30, keepResultTokens: 5 })).toMatchObject({
@@ -131,6 +133,16 @@ describe('hook config', () => {
     expect(resolveHookConfig({ keepMode: 'bogus' })).not.toHaveProperty('keepMode');
     expect(resolveHookConfig({ builtinFallback: 'never' }).builtinFallback).toBe('never');
     expect(resolveHookConfig({ builtinFallback: 'always' }).builtinFallback).toBe('always');
+  });
+
+  it('reads the old-prose options and ignores bad values', () => {
+    expect(resolveHookConfig({ oldProse: 'digest', recentTurns: 5, proseModel: 'sonnet' })).toMatchObject({
+      oldProse: 'digest',
+      recentTurns: 5,
+      proseModel: 'sonnet',
+    });
+    expect(resolveHookConfig({ oldProse: 'maybe', recentTurns: 'x' })).not.toHaveProperty('oldProse');
+    expect(resolveHookConfig({})).not.toHaveProperty('recentTurns');
   });
 
   it('carries the endpoint and the key file through', () => {
@@ -676,5 +688,52 @@ describe('auto-compaction at compactAtPercent', () => {
     await t.run();
     await t.run();
     expect(t.commands).toEqual(['compact']);
+  });
+});
+
+describe('old prose through the hook', () => {
+  const turns = (n: number): { role: 'user' | 'assistant'; text: string; toolUses: never[] }[] =>
+    Array.from({ length: n }, (_, i) => [
+      { role: 'user' as const, text: `prompt ${i} ${'detail '.repeat(100)}`, toolUses: [] },
+      { role: 'assistant' as const, text: `reply ${i} ${'narration '.repeat(100)}`, toolUses: [] },
+    ]).flat();
+
+  async function run(options: Record<string, unknown>, complete?: (r: unknown) => Promise<string>) {
+    const { $, notices } = host(jevFetch(() => 0.1));
+    (($ as unknown) as { model: unknown }).model = { complete: complete ?? (async () => 'MODEL SUMMARY') };
+    const messages = turns(12);
+    const out = (await hooks({ preserveRecentMessages: 2, ...options })['session.compact']!(
+      $,
+      { trigger: 'manual', messages },
+      async () => ({ messages: [] }),
+    )) as { messages: { role: string; text: string; handle?: string }[] };
+    return { out, notices, messages };
+  }
+
+  it('digest replaces the old prefix and leaves the recent turns', async () => {
+    const { out, messages } = await run({ oldProse: 'digest', recentTurns: 3 });
+    expect(out.messages[0]!.text).toMatch(/^\[fast-jev-compaction digest of 9 earlier turns/);
+    expect(out.messages.at(-1)!.text).toBe(messages.at(-1)!.text);
+    expect(out.messages).toHaveLength(2 + 3 * 2);
+  });
+
+  it('summarize asks the session model with proseModel and installs its reply', async () => {
+    const requests: { model: string; maxTokens: number }[] = [];
+    const { out } = await run({ oldProse: 'summarize', recentTurns: 3, proseModel: 'sonnet' }, async (r) => {
+      requests.push(r as { model: string; maxTokens: number });
+      return 'MODEL SUMMARY';
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ model: 'sonnet', maxTokens: 3000 });
+    expect(out.messages[0]!.text).toBe('[fast-jev-compaction summary of 9 earlier turns]\nMODEL SUMMARY');
+  });
+
+  it('keep makes no model call', async () => {
+    let called = false;
+    await run({}, async () => {
+      called = true;
+      return 'x';
+    });
+    expect(called).toBe(false);
   });
 });

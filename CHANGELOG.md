@@ -3,6 +3,34 @@
 All notable changes to this fork are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.0]
+
+### Added
+
+- `oldProse` (`keep` default, `digest`, `summarize`) and `recentTurns` (default
+  8): the history is split at the start of the `recentTurns`-th last user turn
+  and everything before it is replaced by one user message (a digest or a
+  summary) plus a one-line assistant acknowledgement. The recent suffix goes
+  through the usual pruning. The cut always falls on a user turn, so a tool_use
+  and its tool_result stay on the same side; the first message becomes the
+  digest, so it is the pinned one.
+  - `digest`: deterministic and offline. Keeps the first prompt (2000 chars),
+    then per turn the user prompt (400) and the assistant's final reply (500),
+    tool names with counts, and a footer of the paths, URLs, ticket ids, PR
+    numbers and shas mentioned. Tool results and intermediate narration are
+    dropped. Capped at 12000 chars (oldest entries after the first prompt go).
+  - `summarize`: one `$.model.complete` call through the session's own client
+    (`proseModel`, default `haiku`, 3000 tokens), over the old prose and tool
+    names; falls back to the digest when the call fails or comes back empty.
+    Counts against `compactionTimeoutMs`.
+  - A digest or summary from an earlier compaction is folded in (digest entries
+    and references merged, a summary passed to the summarizer as the previous
+    one), never chained, so its size stays bounded.
+- `proseModel` plugin option; `oldProse*` fields in `CompactResult.stats`; the
+  hook's summary line reports the old-prose replacement.
+- Exports: `condenseOldProse`, `splitOldProse`, `buildDigest`,
+  `buildSummaryPrompt`, `parseCondensed`, `collectReferences`.
+
 ## [0.7.0]
 
 ### Added

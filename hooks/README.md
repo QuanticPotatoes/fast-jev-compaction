@@ -64,6 +64,9 @@ The plugin declares these `userConfig` values in
 | `dropCalls` | `false` |
 | `trimHostText` | `true` |
 | `hostTextHeadChars` | `200` |
+| `oldProse` | `keep` (`digest`, `summarize`) |
+| `recentTurns` | `8` |
+| `proseModel` | `haiku` (`summarize` only) |
 | `taskResultHeadChars` | `4000` |
 | `model` | `jev-latest` |
 | `baseUrl` | the TypeSafe endpoint |

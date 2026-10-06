@@ -24,6 +24,9 @@ export interface Aggregate extends ConfigLabel {
   floorGrowthPerPoint: number | null;
   /** Mean assistant turns available to the loss window; well below the window size means weak evidence. */
   meanWindowTurns: number;
+  hostCharsTrimmed: number;
+  hostMessagesTrimmed: number;
+  hostLostAndNeeded: number;
   degraded: number;
   lostAndNeeded: number;
   lostAndNeededRate: number;
@@ -74,6 +77,9 @@ export function aggregate(label: ConfigLabel, sessions: readonly SessionResult[]
     meanLastFloorTokens: mean(segments.map((seg) => seg.points.at(-1)!.tokensAfter)),
     floorGrowthPerPoint: growth.length === 0 ? null : mean(growth),
     meanWindowTurns: mean(points.map((p) => p.windowTurns)),
+    hostCharsTrimmed: sum(points, (p) => p.hostCharsTrimmed),
+    hostMessagesTrimmed: sum(points, (p) => p.hostMessagesTrimmed),
+    hostLostAndNeeded: sum(points, (p) => p.hostLostAndNeeded),
     degraded,
     lostAndNeeded,
     lostAndNeededRate: rate(lostAndNeeded, degraded),
@@ -91,7 +97,7 @@ const pct = (value: number): string => `${(value * 100).toFixed(1)}%`;
 const k = (value: number): string => `${(value / 1000).toFixed(1)}k`;
 
 export function formatTable(rows: readonly Aggregate[]): string {
-  const header = ['asker', 'policy', 'points', 'trim', 'sess', 'pts', 'reduct', 'floor', 'first', 'last', 'growth/pt', 'degraded', 'lost&needed', 'rerun', 'win', 'skip/err'];
+  const header = ['asker', 'policy', 'points', 'trim', 'sess', 'pts', 'reduct', 'floor', 'first', 'last', 'growth/pt', 'degraded', 'lost&needed', 'rerun', 'host cut', 'host needed', 'win', 'skip/err'];
   const body = rows.map((r) => [
     r.asker,
     r.policy,
@@ -107,6 +113,8 @@ export function formatTable(rows: readonly Aggregate[]): string {
     String(r.degraded),
     `${r.lostAndNeeded} (${pct(r.lostAndNeededRate)})`,
     `${r.reruns} (${pct(r.rerunRate)})`,
+    `${k(r.hostCharsTrimmed)}ch/${r.hostMessagesTrimmed}msg`,
+    String(r.hostLostAndNeeded),
     r.meanWindowTurns.toFixed(1),
     `${r.unscored}/${r.errors}`,
   ]);

@@ -2,6 +2,7 @@
 import {
   collectToolCalls,
   compact,
+  resolveOptions,
   estimateTokens,
   type CompactOptions,
   type CompactResult,
@@ -61,6 +62,12 @@ export interface PointResult {
   reruns: number;
   /** Assistant turns actually available to the loss window (<= windowTurns; less near a segment end). */
   windowTurns: number;
+  /** Characters cut by host-text trimming (0 when off or unsupported). */
+  hostCharsTrimmed: number;
+  hostMessagesTrimmed: number;
+  /** Trimmed host messages with a lost distinctive token later typed into a tool call. */
+  hostLostAndNeeded: number;
+  hostNeededTokenCount: number;
   byTool: Record<string, { degraded: number; lostAndNeeded: number; reruns: number }>;
 }
 
@@ -78,6 +85,19 @@ export interface SessionResult {
   unscored: number;
   errors: number;
 }
+
+type HostTrimmer = (messages: readonly Message[], options: unknown) => { messages: Message[] };
+
+/** `src/host-text.ts` exists only on branches with trimHostText; loaded by a computed path so this typechecks without it. */
+async function loadHostTrimmer(): Promise<HostTrimmer | null> {
+  try {
+    const path = '../../src/host-text.js';
+    return ((await import(path)) as { trimHostText: HostTrimmer }).trimHostText;
+  } catch {
+    return null;
+  }
+}
+const hostTrimmer = await loadHostTrimmer();
 
 const tokenCache = new WeakMap<Message, number>();
 
@@ -131,14 +151,26 @@ async function runPoint(
     const text = working[call.resultIndex]?.toolResults?.find((r) => r.tool_use_id === call.tool_use_id)?.text ?? '';
     degraded.push({ tool_use_id: call.tool_use_id, tool: call.tool, input: call.input, resultText: text });
   }
-  const verdicts = detectLoss({
+  const hostItems: DegradedCall[] = [];
+  if (config.trimHostText && hostTrimmer) {
+    const trimmed = hostTrimmer(working, resolveOptions(compactOptions(config))).messages;
+    trimmed.forEach((message, index) => {
+      const before = working[index];
+      if (before && before.text !== message.text) {
+        hostItems.push({ tool_use_id: `host:${index}`, tool: 'host-text', input: {}, resultText: before.text });
+      }
+    });
+  }
+  const all = detectLoss({
     original: input.original,
     from: input.from,
     until: input.until,
     compacted: result.messages,
-    degraded,
+    degraded: [...degraded, ...hostItems],
     turns: config.windowTurns,
   });
+  const verdicts = all.slice(0, degraded.length);
+  const hostVerdicts = all.slice(degraded.length);
   for (const call of degraded) alreadyDegraded.add(call.tool_use_id);
 
   const byTool: PointResult['byTool'] = {};
@@ -172,6 +204,10 @@ async function runPoint(
       lostAndNeeded: verdicts.filter((v) => v.lostAndNeeded).length,
       neededTokenCount: verdicts.reduce((sum, v) => sum + v.neededTokens, 0),
       reruns: verdicts.filter((v) => v.rerun).length,
+      hostCharsTrimmed: (stats as { hostCharsTrimmed?: number }).hostCharsTrimmed ?? 0,
+      hostMessagesTrimmed: hostItems.length,
+      hostLostAndNeeded: hostVerdicts.filter((v) => v.lostAndNeeded).length,
+      hostNeededTokenCount: hostVerdicts.reduce((sum, v) => sum + v.neededTokens, 0),
       windowTurns: Math.min(
         config.windowTurns,
         input.original.slice(input.from, input.until).filter((m) => m.role === 'assistant').length,

@@ -64,6 +64,7 @@ The plugin declares these `userConfig` values in
 | `dropCalls` | `false` |
 | `trimHostText` | `true` |
 | `hostTextHeadChars` | `200` |
+| `taskResultHeadChars` | `4000` |
 | `model` | `jev-latest` |
 | `baseUrl` | the TypeSafe endpoint |
 | `envFile` | unset |

@@ -134,3 +134,48 @@ describe('compact with host text', () => {
     expect(resolveOptions({ hostTextHeadChars: Number.NaN }).hostTextHeadChars).toBe(200);
   });
 });
+
+describe('task-notification', () => {
+  const report = 'Finding: the retry loop swallows errors. '.repeat(300);
+  const notification = [
+    '<task-notification>',
+    '<task-id>a1b2c3</task-id>',
+    '<tool-use-id>toolu_01</tool-use-id>',
+    '<output-file>/tmp/tasks/a1b2c3.output</output-file>',
+    '<status>completed</status>',
+    '<summary>Agent "audit retries" completed</summary>',
+    `<event>${'monitor line\n'.repeat(200)}</event>`,
+    `<result>${report}</result>`,
+    '<usage>total_tokens: 123456 tool_uses: 40 duration_ms: 99999</usage>',
+    '</task-notification>',
+  ].join('\n');
+  const run = (taskResultHeadChars: number, text = notification) =>
+    trimHostText([user('a'), user(text), user('z')], { ...opts(1), taskResultHeadChars }).messages[1]!.text;
+
+  it('keeps pointers whole and the result up to its budget, drops the rest', () => {
+    const out = run(4000);
+    for (const kept of ['<task-id>a1b2c3</task-id>', '<tool-use-id>toolu_01</tool-use-id>', '<output-file>/tmp/tasks/a1b2c3.output</output-file>', '<status>completed</status>', 'audit retries']) {
+      expect(out).toContain(kept);
+    }
+    expect(out).toContain(`<result>${report.slice(0, 4000)}\n${HOST_TEXT_MARKER_PREFIX}`);
+    expect(out).not.toContain('monitor line');
+    expect(out).not.toContain('total_tokens');
+    expect(out.startsWith('<task-notification>') && out.endsWith('</task-notification>')).toBe(true);
+    expect(out).toContain('</result>');
+  });
+
+  it('keeps a short result whole', () => {
+    const out = run(4000, notification.replace(report, 'short report'));
+    expect(out).toContain('<result>short report</result>');
+    expect(out).not.toContain('monitor line');
+  });
+
+  it('is idempotent', () => {
+    const once = run(4000);
+    expect(run(4000, once)).toBe(once);
+  });
+
+  it('trims the result like any block when the budget is 0', () => {
+    expect(run(0).length).toBeLessThan(500);
+  });
+});

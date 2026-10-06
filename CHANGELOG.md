@@ -7,6 +7,11 @@ All notable changes to this fork are documented here. The format follows
 
 ### Added
 
+- `taskResultHeadChars` (default 4000, 0 = trim like the rest): a trimmed
+  `<task-notification>` keeps `task-id`, `status`, `summary`, `output-file` and
+  `tool-use-id` whole and its `<result>` (a subagent's final report, not
+  reproducible) up to this budget; `<event>`, `<usage>` and other bulk collapse
+  into one marker.
 - `trimHostText` (default true) and `hostTextHeadChars` (default 200): outside
   the pinned recent messages, host-generated blocks in user turns
   (`<system-reminder>`, `<task-notification>`, local and `!` command echoes and

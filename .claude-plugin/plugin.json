@@ -118,6 +118,12 @@
       "description": "Characters of a trimmed host notice kept before its marker; 0 keeps only the marker.",
       "default": 200
     },
+    "taskResultHeadChars": {
+      "type": "number",
+      "title": "Kept subagent report",
+      "description": "Characters of a task notification's result (a subagent's final report) kept when trimming host notices; 0 trims it like any other notice.",
+      "default": 4000
+    },
     "model": {
       "type": "string",
       "title": "Jev model",

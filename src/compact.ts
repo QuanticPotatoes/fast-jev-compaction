@@ -29,6 +29,7 @@ export const DEFAULT_OPTIONS: ResolvedCompactOptions = {
   dropCalls: false,
   trimHostText: true,
   hostTextHeadChars: 200,
+  taskResultHeadChars: 4000,
 };
 
 /** Tokens the request envelope (`model`, key names) adds around state and questions. */
@@ -69,6 +70,10 @@ export function resolveOptions(options: CompactOptions = {}): ResolvedCompactOpt
     hostTextHeadChars: Math.max(
       0,
       Math.floor(finite(options.hostTextHeadChars, DEFAULT_OPTIONS.hostTextHeadChars)),
+    ),
+    taskResultHeadChars: Math.max(
+      0,
+      Math.floor(finite(options.taskResultHeadChars, DEFAULT_OPTIONS.taskResultHeadChars)),
     ),
   };
 }

@@ -72,18 +72,63 @@ export function isHostText(text: string): boolean {
   return text.trim().length > 0 && stripHostText(text).trim().length === 0;
 }
 
+/** Children of a task-notification that are small pointers to recover the rest. */
+const TASK_KEEP_TAGS = new Set(['task-id', 'status', 'summary', 'output-file', 'tool-use-id']);
+
+/**
+ * A task-notification keeps its pointer elements whole and the `<result>` (a
+ * subagent's final report, not reproducible) up to `resultChars`; every other
+ * child (`<event>`, `<usage>`, ...) is dropped into one marker.
+ */
+function trimTaskNotification(block: string, resultChars: number): string {
+  const open = '<task-notification>';
+  const close = '</task-notification>';
+  const inner = block.slice(open.length, block.length - close.length);
+  let kept = '';
+  let cut = 0;
+  let rest = inner;
+  for (const match of inner.matchAll(/<([\w-]+)>([\s\S]*?)<\/\1>/g)) {
+    const [element, tag, body] = [match[0], match[1]!, match[2]!];
+    rest = rest.replace(element, '');
+    if (TASK_KEEP_TAGS.has(tag)) {
+      kept += `\n${element}`;
+    } else if (tag === 'result') {
+      if (body.length <= resultChars + 120) {
+        kept += `\n${element}`;
+      } else {
+        const head = sliceSurrogateSafe(body, 0, resultChars);
+        kept += `\n<result>${head}\n${markerOf(body.length - head.length)}</result>`;
+      }
+    } else {
+      cut += element.length;
+    }
+  }
+  cut += rest.trim().length;
+  const marker = cut > 0 ? `\n${markerOf(cut)}` : '';
+  return `${open}${kept}${marker}\n${close}`;
+}
+
 /**
  * Cuts each recognized host block longer than `headChars` + a margin to its
  * head and a marker. A block that already carries the marker is left alone,
  * which makes the pass idempotent. The closing tag is re-appended so the cut
  * block stays a closed pair and cannot swallow a later block.
  */
-export function trimHostBlocks(text: string, headChars: number): string {
+export function trimHostBlocks(text: string, headChars: number, taskResultHeadChars = 0): string {
   let out = '';
   let at = 0;
   for (const [start, end] of hostRanges(text)) {
     const block = text.slice(start, end);
-    if (block.includes(HOST_TEXT_MARKER_PREFIX) || block.length <= headChars + 120) continue;
+    if (block.includes(HOST_TEXT_MARKER_PREFIX)) continue;
+    if (taskResultHeadChars > 0 && block.startsWith('<task-notification>')) {
+      const rebuilt = trimTaskNotification(block, taskResultHeadChars);
+      if (rebuilt.length + 120 < block.length) {
+        out += text.slice(at, start) + rebuilt;
+        at = end;
+        continue;
+      }
+    }
+    if (block.length <= headChars + 120) continue;
     const close = block.startsWith('<') ? (/<\/[\w-]+>$/.exec(block)?.[0] ?? '') : '';
     const head = sliceSurrogateSafe(block, 0, headChars);
     out += `${text.slice(at, start)}${head}\n${markerOf(block.length - head.length - close.length)}${close}`;
@@ -99,7 +144,7 @@ export function trimHostBlocks(text: string, headChars: number): string {
  */
 export function trimHostText(
   messages: readonly Message[],
-  options: Pick<ResolvedCompactOptions, 'preserveRecentMessages' | 'hostTextHeadChars'>,
+  options: Pick<ResolvedCompactOptions, 'preserveRecentMessages' | 'hostTextHeadChars' | 'taskResultHeadChars'>,
 ): { messages: Message[]; trimmed: number; charsCut: number } {
   let trimmed = 0;
   let charsCut = 0;
@@ -107,7 +152,7 @@ export function trimHostText(
     if (message.role !== 'user' || (message.toolResults ?? []).length > 0) return message;
     if (index >= messages.length - options.preserveRecentMessages) return message;
     if (index === 0 && !isHostText(message.text)) return message;
-    const text = trimHostBlocks(message.text, options.hostTextHeadChars);
+    const text = trimHostBlocks(message.text, options.hostTextHeadChars, options.taskResultHeadChars);
     if (text === message.text) return message;
     trimmed += 1;
     charsCut += message.text.length - text.length;

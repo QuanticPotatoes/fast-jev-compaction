@@ -106,6 +106,18 @@
       "description": "Characters of a tool result kept when Jev decides its full output is no longer needed; 0 keeps only the note.",
       "default": 300
     },
+    "trimHostText": {
+      "type": "boolean",
+      "title": "Trim host notices",
+      "description": "Cut system reminders, task notifications, command echoes and hook output (never the user's own prose) outside the newest messages to a short head and a marker.",
+      "default": true
+    },
+    "hostTextHeadChars": {
+      "type": "number",
+      "title": "Trimmed host notice head",
+      "description": "Characters of a trimmed host notice kept before its marker; 0 keeps only the marker.",
+      "default": 200
+    },
     "model": {
       "type": "string",
       "title": "Jev model",

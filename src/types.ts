@@ -127,6 +127,14 @@ export interface CompactOptions {
    * (fast-jev-compaction#65).
    */
   dropCalls?: boolean;
+  /**
+   * Cut recognized host-generated blocks (system reminders, task notifications,
+   * command echoes, hook output) outside the pinned messages to a head and a
+   * marker. User prose is never matched. Default true.
+   */
+  trimHostText?: boolean;
+  /** Characters of a trimmed host block to retain. Default 200. */
+  hostTextHeadChars?: number;
 }
 
 export interface ResolvedCompactOptions {
@@ -140,6 +148,8 @@ export interface ResolvedCompactOptions {
   maxRequestTokens: number;
   dropCalls: boolean;
   truncateHeadChars: number;
+  trimHostText: boolean;
+  hostTextHeadChars: number;
 }
 
 export interface CompactResult {
@@ -157,6 +167,9 @@ export interface CompactResult {
     callsDropped: number;
     callsStubbed: number;
     pinned: number;
+    /** Messages whose host blocks were trimmed, and the characters that removed. */
+    hostTextTrimmed: number;
+    hostCharsTrimmed: number;
     stateTokens: number;
     /** Which fitting stage the state needed, '' when no request was made. */
     stateStage: string;

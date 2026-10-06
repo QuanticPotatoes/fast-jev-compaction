@@ -1,3 +1,4 @@
+import { stripHostText } from './host-text.js';
 import type {
   CompactionState,
   FittedState,
@@ -234,17 +235,14 @@ function historyEntries(
   return entries;
 }
 
-/** The last three user prompts, as the default `goal`. */
+/** The last three user prompts, host-written blocks left out, as the default `goal`. */
 export function goalFromMessages(messages: readonly Message[]): string {
   return messages
-    .filter(
-      (message) =>
-        message.role === 'user' &&
-        message.text.trim().length > 0 &&
-        (message.toolResults ?? []).length === 0,
-    )
+    .filter((message) => message.role === 'user' && (message.toolResults ?? []).length === 0)
+    .map((message) => stripHostText(message.text).trim())
+    .filter((text) => text.length > 0)
     .slice(-3)
-    .map((message) => truncate(message.text, 500))
+    .map((text) => truncate(text, 500))
     .join('\n');
 }
 
